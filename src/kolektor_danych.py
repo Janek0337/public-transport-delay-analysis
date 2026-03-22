@@ -1,17 +1,17 @@
 import requests
-import os
-from dotenv import find_dotenv, load_dotenv
 import json
 import math
 from pathlib import Path
+import logging
 
+logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / 'data'
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+BASE_URL = "https://api.um.warszawa.pl/api/action/"
 
 def stworz_trase_linii(linia: int, api_key: str):
-    BASE_URL = "https://api.um.warszawa.pl/api/action/"
     endpoint = "public_transport_routes"
     URL = BASE_URL + endpoint
 
@@ -25,7 +25,7 @@ def stworz_trase_linii(linia: int, api_key: str):
         data = res.json()
         
     except Exception as e:
-        print(f"Błąd API przy pobieraniu trasy linii {linia}: {e}")
+        logger.error(f"Błąd API przy pobieraniu trasy linii {linia}: {e}")
         return 1
 
     trasa_linii = data['result'][str(linia)]
@@ -50,7 +50,6 @@ def stworz_trase_linii(linia: int, api_key: str):
 
 
 def stworz_rozklad_linii(linia: int, api_key: str):
-    BASE_URL = "https://api.um.warszawa.pl/api/action/"
     endpoint = "dbtimetable_get"
     URL = BASE_URL + endpoint
     ID_ENDPOINT_ROZKLADOW = 'e923fa0e-d96c-43f9-ae6e-60518c9f3238'
@@ -83,7 +82,7 @@ def stworz_rozklad_linii(linia: int, api_key: str):
                 data = res.json()
 
             except Exception as e:
-                print(f"Błąd API przy tworzeniu rozkładu jazdy linii {linia}: {e}")
+                logger.error(f"Błąd API przy tworzeniu rozkładu jazdy linii {linia}: {e}")
                 return 1
 
             rozklad_przystanku = {'przystanek_id': przystanek_id,
@@ -93,7 +92,7 @@ def stworz_rozklad_linii(linia: int, api_key: str):
             
             kursy = data['result']
             if not isinstance(kursy, list):
-                print(f"Pominęto przystanek {przystanek_id} (brak rozkładu)")
+                logger.debug(f"Pominęto przystanek {przystanek_id} (brak rozkładu)")
                 continue
 
             for kurs in kursy:
@@ -132,7 +131,6 @@ def stworz_rozklad_linii(linia: int, api_key: str):
 
 
 def stworz_baze_polozen_przystankow(api_key: str):
-    BASE_URL = "https://api.um.warszawa.pl/api/action/"
     endpoint = "dbtimetable_get"
     PRZYSTANKI_URL = BASE_URL + endpoint
     ID_ENDPOINTU_PRZYSTANKOW = 'ab75c33d-3a26-4342-b36a-6e5fef0a3ac3'
@@ -146,7 +144,7 @@ def stworz_baze_polozen_przystankow(api_key: str):
         res.raise_for_status()
         data = res.json()
     except Exception as e:
-        print(f"Błąd API przy pobieraniu listy położeń przystanków. {e}")
+        logger.error(f"Błąd API przy pobieraniu listy położeń przystanków: {e}")
         return 1
 
     przystanki = dict()
@@ -172,3 +170,35 @@ def stworz_baze_polozen_przystankow(api_key: str):
         json.dump(przystanki, f, ensure_ascii=False, indent=4)
     
     return 0
+
+def zbierz_obecne_polozenie(api_key: str, linie: list) -> list[dict]:
+    endpoint = 'busestrams_get'
+    BUS_LOC_RESOURCE_ID = 'f2e5503e-927d-4ad3-9500-4ab9e55deb59'
+    BUS_LOC_URL = BASE_URL + endpoint
+    type = 1 # 1 dla autobusu, 2 tramwaj
+
+    params = {
+        'resource_id': BUS_LOC_RESOURCE_ID,
+        'apikey': api_key,
+        'type': type
+    }
+
+    try:
+        res = requests.post(url=BUS_LOC_URL, params=params)
+        res.raise_for_status()
+        data = res.json()
+    except Exception as e:
+        logger.error(f"Błąd API przy pobieraniu aktualnego położenia pojazdów: {e}")
+        return []
+
+    wynik = [{'linia': x['Lines'],
+            'lat': x['Lat'],
+            'lon': x['Lon'],
+            'brygada': x['Brigade'],
+            'czas': x['Time']
+            } for x in data['result'] if x['Lines'] in linie]
+
+    with open('polozenie.json', 'w') as f:
+        json.dump(wynik, f, indent=4)
+
+    return wynik
