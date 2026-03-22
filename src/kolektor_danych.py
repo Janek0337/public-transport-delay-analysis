@@ -44,8 +44,7 @@ def stworz_trase_linii(linia: int, api_key: str):
     
     # przekształcenie wartości odległość w odległość od początku, a nie od ostatniego przystanku
     for trasa in dobra_trasa['warianty_tras']:
-        if trasa == 'linia':
-            continue
+
         posortowane_klucze = sorted(dobra_trasa['warianty_tras'][trasa].keys() , key=int)
 
         skumulowana_suma = 0
@@ -53,10 +52,20 @@ def stworz_trase_linii(linia: int, api_key: str):
             skumulowana_suma += dobra_trasa['warianty_tras'][trasa][przystanek]['odleglosc']
             dobra_trasa['warianty_tras'][trasa][przystanek]['odleglosc'] = skumulowana_suma
     
+    # zamiana kluczy przystanków trasy żeby były id przystanku zamiast kolejności
+    odwrocona_trasa = {'linia': linia, 'warianty_tras': dict()}
+    for trasa in dobra_trasa['warianty_tras']:
+        odwrocona_trasa['warianty_tras'][trasa] = dict()
+        for nr_przystanku in dobra_trasa['warianty_tras'][trasa]:
+            id_przystanku = dobra_trasa['warianty_tras'][trasa][nr_przystanku]['przystanek_id']
+            odl = dobra_trasa['warianty_tras'][trasa][nr_przystanku]['odleglosc']
+
+            odwrocona_trasa['warianty_tras'][trasa][id_przystanku] = {'odleglosc': odl, 'nr_kolejnosci': nr_przystanku}
+
 
     sciezka = DATA_DIR / f"trasa_{linia}.json"
     with open(sciezka, 'w', encoding='utf-8') as f:
-        json.dump(dobra_trasa, f, ensure_ascii=False, indent=4)
+        json.dump(odwrocona_trasa, f, ensure_ascii=False, indent=4)
 
     return 0
 
