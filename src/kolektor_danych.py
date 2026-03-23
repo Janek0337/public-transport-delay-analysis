@@ -28,6 +28,9 @@ def stworz_trase_linii(api_key: str, linia: str):
         logger.error(f"Błąd API przy pobieraniu trasy linii {linia}: {e}")
         return 1
 
+    if not isinstance(data['result'], list):
+        logger.warning(f"Brak odpowiedzi od API lub nieoczekiwana odpowiedź: \"{data['result']}\"")
+        
     trasa_linii = data['result'][str(linia)]
     dobra_trasa = {'linia': linia, 'warianty_tras': dict()}
 
@@ -207,10 +210,15 @@ def zbierz_obecne_polozenie(api_key: str, linie: list[str]) -> list[dict]:
         res = requests.post(url=BUS_LOC_URL, params=params)
         res.raise_for_status()
         data = res.json()
+
     except Exception as e:
         logger.error(f"Błąd API przy pobieraniu aktualnego położenia pojazdów: {e}")
         return []
 
+    if not isinstance(data['result'], list):
+        logger.warning(f"Brak autobusów na trasie lub nieoczekiwana odpowiedź od API: \"{data['result']}\"")
+        return []
+    
     wynik = [{'linia': x['Lines'],
             'lat': x['Lat'],
             'lon': x['Lon'],
