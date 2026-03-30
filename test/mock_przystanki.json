@@ -1,0 +1,27 @@
+{
+    "5055_07": {
+        "nazwa_przystanku": "Stare Bemowo",
+        "lat": 52.258409,
+        "lon": 20.898306
+    },
+    "5055_01": {
+        "nazwa_przystanku": "Stare Bemowo",
+        "lat": 52.257964,
+        "lon": 20.899938
+    },
+    "5110_01": {
+        "nazwa_przystanku": "Radiowa-WAT",
+        "lat": 52.255062,
+        "lon": 20.905856
+    },
+    "5063_01": {
+        "nazwa_przystanku": "Radiowa",
+        "lat": 52.251688,
+        "lon": 20.912509
+    },
+    "5061_01": {
+        "nazwa_przystanku": "Kazubów",
+        "lat": 52.241427,
+        "lon": 20.912454
+    }
+}
