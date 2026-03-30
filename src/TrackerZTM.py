@@ -1,5 +1,5 @@
 from typing import TypedDict, Optional, Tuple, List
-import utils
+from src import utils
 import json
 import logging
 
@@ -97,6 +97,8 @@ class TrackerZTM:
             pojazd['stan'] = 'W_TRASIE'
             pojazd['historia_gps'] = []
             logger.info(f"Linia {linia}, brygada {brygada}: kurs_id: {rozklad_id}")
+
+            return 0
 
         elif pojazd["stan"] == "W_TRASIE":
             # - Znajdź przystanek A i B w przypisanym id_kursu
@@ -208,3 +210,76 @@ class TrackerZTM:
                 id_przystankow.append(przystanek_3_id)
 
         return id_przystankow
+    
+
+# ==========================================
+# MODUŁ TESTOWY (Uruchomi się tylko przy wywołaniu tego pliku)
+# ==========================================
+if __name__ == "__main__":
+    import time
+    
+    # 1. Konfiguracja testu - PODMIEŃ DANE NA ZGODNE Z TWOIM JSON-em
+    TEST_LINIA = "523"
+    TEST_BRYGADA = "4" # Podmień na brygadę, którą masz w swoim pliku
+    
+    # Wybierz z rozkładu czas startu jakiegoś kursu (w sekundach)
+    CZAS_BAZOWY = 34260 + 600  # Np. to Twoje 05:34:00 z poprzedniej wiadomości
+    
+    # Wybierz z pliku przystanki.json koordynaty pierwszego przystanku z tego kursu
+    LAT_PRZYSTANEK_1 = 52.250082  # <-- Wpisz prawdziwe lat
+    LON_PRZYSTANEK_1 = 21.089155  # <-- Wpisz prawdziwe lon
+    
+    # Wybierz z pliku przystanki.json koordynaty DRUGIEGO przystanku z tego kursu
+    # (Potrzebujemy ich, żeby zasymulować ruch we właściwym kierunku)
+    LAT_PRZYSTANEK_2 = 52.24942 # <-- Wpisz prawdziwe lat
+    LON_PRZYSTANEK_2 = 21.09299 # <-- Wpisz prawdziwe lon
+
+    # Wybierz z pliku przystanki.json koordynaty TRZECIEGO przystanku z tego kursu
+    LAT_PRZYSTANEK_3 = 52.247932  # <-- Wpisz prawdziwe lat dla 3. przystanku
+    LON_PRZYSTANEK_3 = 21.098391
+
+    print("\n--- INICJALIZACJA SYSTEMU ---")
+    tracker = TrackerZTM(linie=[TEST_LINIA])
+    print("Rozkłady i przystanki wczytane pomyślnie!")
+
+    print("\n--- START SYMULACJI API ZTM ---")
+
+    # KROK 1: Pierwszy sygnał. Autobus pojawia się w okolicach 1. przystanku.
+    print("\n[PING 1] Autobus loguje się w systemie...")
+    wynik_1 = tracker.przetworz_pozycje(TEST_LINIA, TEST_BRYGADA, LAT_PRZYSTANEK_1 + 0.0001, LON_PRZYSTANEK_1, CZAS_BAZOWY)
+    
+    print(f"Zwrócony kod (oczekiwany 2): {wynik_1}")
+    
+    if wynik_1 == 1:
+        print(f"❌ BŁĄD: Skrypt twierdzi, że brygady '{TEST_BRYGADA}' nie ma w rozkładzie!")
+        print(f"Oto klucze (brygady), które skrypt fizycznie widzi w pamięci: {list(tracker.rozklady[TEST_LINIA].keys())}")
+    else:
+        stan = tracker.pojazdy[TEST_LINIA][TEST_BRYGADA]
+        print(f"✅ Stan w Notatniku: {stan['stan']}")
+
+    # KROK 2: Dryf GPS. Autobus stoi, ale GPS "skacze" o 10 metrów.
+    print("\n[PING 2] Autobus stoi na czerwonym świetle (Dryf GPS rzędu 15 metrów)...")
+    # Lekka zmiana koordynatów, ale za mała, żeby przekroczyć nasz próg 40 metrów
+    wynik_2 = tracker.przetworz_pozycje(TEST_LINIA, TEST_BRYGADA, LAT_PRZYSTANEK_1 + 0.0002, LON_PRZYSTANEK_1 + 0.0001, CZAS_BAZOWY + 15)
+    stan = tracker.pojazdy[TEST_LINIA][TEST_BRYGADA]
+    print(f"Zwrócony kod (oczekiwany 2): {wynik_2}")
+    print(f"Liczba punktów w historii (oczekiwana 1 - ignorujemy dryf): {len(stan['historia_gps'])}")
+
+    # KROK 3: Autobus rusza z kopyta! Jedzie w stronę 2. przystanku.
+    print("\n[PING 3] Autobus przejechał 200 metrów w stronę drugiego przystanku!")
+    # Aby zasymulować ruch w stronę przystanku 2, bierzemy średnią (środek drogi)
+    lat_w_ruchu = (LAT_PRZYSTANEK_1 + LAT_PRZYSTANEK_2) / 2
+    lon_w_ruchu = (LON_PRZYSTANEK_1 + LON_PRZYSTANEK_2) / 2
+    
+    wynik_3 = tracker.przetworz_pozycje(TEST_LINIA, TEST_BRYGADA, lat_w_ruchu, lon_w_ruchu, CZAS_BAZOWY + 30)
+    
+    # KROK 4: Werdykt
+    print("\n--- WYNIK INICJALIZACJI ---")
+    stan = tracker.pojazdy[TEST_LINIA][TEST_BRYGADA]
+    print(f"Ostateczny stan autobusu: {stan['stan']}")
+    if stan['stan'] == 'W_TRASIE':
+        print(f"✅ SUKCES! Przypisano ID Kursu: {stan['id_kursu']}")
+    else:
+        print("❌ BŁĄD! Autobus nie wszedł w stan W_TRASIE. Sprawdź logi (warningi).")
+
+    

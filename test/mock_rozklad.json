@@ -1,0 +1,46 @@
+{
+    "linia": "523",
+    "brygady": {
+        "1": [
+            {
+                "id_kursu": 0,
+                "trasa": "TP-OLS",
+                "czas_startu": 31260,
+                "czas_konca": 31620,
+                "przystanki": [
+                    { "przystanek_id": "5055_07", "czas_str": "08:41:00", "czas": 31260, "metr": 0, "nr_kolejnosci": 0 },
+                    { "przystanek_id": "5055_01", "czas_str": "08:42:00", "czas": 31320, "metr": 131, "nr_kolejnosci": 1 },
+                    { "przystanek_id": "5110_01", "czas_str": "08:43:00", "czas": 31380, "metr": 661, "nr_kolejnosci": 2 },
+                    { "przystanek_id": "5063_01", "czas_str": "08:45:00", "czas": 31500, "metr": 1347, "nr_kolejnosci": 3 },
+                    { "przystanek_id": "5061_01", "czas_str": "08:47:00", "czas": 31620, "metr": 2503, "nr_kolejnosci": 4 }
+                ]
+            },
+            {
+                "id_kursu": 1,
+                "trasa": "TD-BEM",
+                "czas_startu": 32400,
+                "czas_konca": 32760,
+                "przystanki": [
+                    { "przystanek_id": "5061_01", "czas_str": "09:00:00", "czas": 32400, "metr": 0, "nr_kolejnosci": 0 },
+                    { "przystanek_id": "5063_01", "czas_str": "09:02:00", "czas": 32520, "metr": 1156, "nr_kolejnosci": 1 },
+                    { "przystanek_id": "5110_01", "czas_str": "09:04:00", "czas": 32640, "metr": 1842, "nr_kolejnosci": 2 },
+                    { "przystanek_id": "5055_01", "czas_str": "09:05:00", "czas": 32700, "metr": 2372, "nr_kolejnosci": 3 },
+                    { "przystanek_id": "5055_07", "czas_str": "09:06:00", "czas": 32760, "metr": 2503, "nr_kolejnosci": 4 }
+                ]
+            },
+            {
+                "id_kursu": 2,
+                "trasa": "TP-OLS",
+                "czas_startu": 33600,
+                "czas_konca": 33960,
+                "przystanki": [
+                    { "przystanek_id": "5055_07", "czas_str": "09:20:00", "czas": 33600, "metr": 0, "nr_kolejnosci": 0 },
+                    { "przystanek_id": "5055_01", "czas_str": "09:21:00", "czas": 33660, "metr": 131, "nr_kolejnosci": 1 },
+                    { "przystanek_id": "5110_01", "czas_str": "09:22:00", "czas": 33720, "metr": 661, "nr_kolejnosci": 2 },
+                    { "przystanek_id": "5063_01", "czas_str": "09:24:00", "czas": 33840, "metr": 1347, "nr_kolejnosci": 3 },
+                    { "przystanek_id": "5061_01", "czas_str": "09:26:00", "czas": 33960, "metr": 2503, "nr_kolejnosci": 4 }
+                ]
+            }
+        ]
+    }
+}
