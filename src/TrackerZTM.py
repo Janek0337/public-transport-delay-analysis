@@ -43,24 +43,8 @@ class TrackerZTM:
         with open(utils.DATA_DIR / 'przystanki.json') as f:
                 self.przystanki = json.load(f)
 
-        #"523":
-        # {
-        #   "16": {
-        #       "stan": "INICJALIZACJA",
-        #       "historia_gps": [(lat, lon, czas), (lat, lon, czas)],
-        #       "id_kursu": None,
-        #       "nastpeny_przystanek_idx": None
-        #   },
-        #   "17": {
-        #       "stan": "INICJALIZACJA",
-        #       "historia_gps": [(lat, lon, czas), (lat, lon, czas)],
-        #       "id_kursu": None,
-        #       "nastpeny_przystanek_idx": None
-        #   }
-        # }
-
     # o jednym położeniu jednej brygaday
-    def przetworz_pozycje(self, linia: str, brygada: str, lat: float, lon: float, czas_gps: int) -> int:
+    def przetworz_pozycje(self, linia: str, brygada: str, lat: float, lon: float, czas_gps: int) -> int | tuple:
         """
         Główna metoda wywoływana co 15 sekund dla każdego autobusu z API.
         zwraca:
@@ -124,29 +108,36 @@ class TrackerZTM:
             obecny_metr_trasy = metr1 + przebyty_odcinek
 
             czas1, czas2 = przystanek_A['czas'], przystanek_B['czas']
-            czas_rzeczywisty_trasy = czas1 + proporcja_przebytej_drogi*(czas2 - czas1)
-            oczekiwany_metr = 
-            
+            czas_oczekiwany_rozkladowy = czas1 + proporcja_przebytej_drogi*(czas2 - czas1)
+            opoznienie = czas_gps - czas_oczekiwany_rozkladowy
 
-            # - Policz Proporcję, Obecny Metr, Oczekiwany Czas i Opóźnienie
-            # - Zapisz opóźnienie
+            # sprawdzamy czy nie jest już na pętli
+            id_kursu = pojazd['id_kursu']
+            czas_ostatniego_przystanku = self.rozklady[linia][brygada][id_kursu]['czas_konca']
+            if przystanek_B['czas'] == czas_ostatniego_przystanku:
+                if utils.oblicz_odleglosc(lat_b, lon_b, lat, lon) < utils.DOKLADNOSC_GPS_M:
+                    pojazd['stan'] = "NA_PETLI"
+                    logger.info(f"Linia {linia}/{brygada}: Zjazd na pętlę. Zakończono kurs {id_kursu}.")
             
-            # TODO: Kod map-matchingu i matematyki
-            pass
+            return (obecny_metr_trasy, opoznienie)
 
         elif pojazd["stan"] == "NA_PETLI":
-            nowy_kurs_id = pojazd['id_kursu']
+            nowy_kurs_id = pojazd['id_kursu'] + 1 
+            
+            if nowy_kurs_id >= len(self.rozklady[linia][brygada]):
+                return 0 
+                
             czas_poczatku_nastpenej_trasy = self.rozklady[linia][brygada][nowy_kurs_id]['czas_startu']
-            if czas_gps > czas_poczatku_nastpenej_trasy:
+            
+            if czas_gps >= czas_poczatku_nastpenej_trasy:
                 pojazd['stan'] = 'W_TRASIE'
+                pojazd['id_kursu'] = nowy_kurs_id
+                pojazd['poprzedni_przystanek'] = self.rozklady[linia][brygada][nowy_kurs_id]['przystanki'][0]
                 pojazd['nastpeny_przystanek'] = self.rozklady[linia][brygada][nowy_kurs_id]['przystanki'][1]
-
+                logger.info(f"Linia {linia}/{brygada}: Rusza w nowy kurs {nowy_kurs_id}.")
                 return 0
             
-    # ---------------------------------------------------------
-    # METODY POMOCNICZE (Prywatne)
-    # ---------------------------------------------------------
-
+            return 0
 
     def _znajdz_rozklad(self, czas_teraz: int, linia: str, brygada: str, lat_sz: float, lon_sz: float) -> int:
 
@@ -264,16 +255,19 @@ class TrackerZTM:
         dB = utils.oblicz_odleglosc(lat_c, lon_c, lat_b, lon_b)
         dC = utils.oblicz_odleglosc(lat_b, lon_b, lat_a, lon_a)
 
-        return dA + dB > dC + BUFOR_ROZNICY_M
+        return dA + dB <= dC + BUFOR_ROZNICY_M
     
     def _oblicz_proporcje_przebytej_trasy(self, przystanek_A: dict, przystanek_B: dict, lat_sz: float, lon_sz: float) -> float:
         
         lat_a, lon_a = self.przystanki[przystanek_A['przystanek_id']]['lat'], self.przystanki[przystanek_A['przystanek_id']]['lon']
         lat_b, lon_b = self.przystanki[przystanek_B['przystanek_id']]['lat'], self.przystanki[przystanek_B['przystanek_id']]['lon']
         
+        dC = utils.oblicz_odleglosc(lat_a, lon_a, lat_b, lon_b)
+        if dC == 0:
+            return 0.0
+        
         dA = utils.oblicz_odleglosc(lat_a, lon_a, lat_sz, lon_sz)
         dB = utils.oblicz_odleglosc(lat_b, lon_b, lat_sz, lon_sz)
-        dC = utils.oblicz_odleglosc(lat_a, lon_a, lat_b, lon_b)
 
         proporcja = (dA**2 + dC**2 - dB**2 ) / (2 * dC**2)
 
