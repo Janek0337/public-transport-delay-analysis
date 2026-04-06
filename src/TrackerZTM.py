@@ -48,8 +48,8 @@ class TrackerZTM:
         """
         Główna metoda wywoływana co 15 sekund dla każdego autobusu z API.
         zwraca:
-        0 - sukces
-        1 - nie ma takiego pojazdu w rozkladzie
+        (opóźnienie, metr, nazwa_trasy) - gdy uda się określić opóźnienie
+        1 - nie ma takiego pojazdu w rozkladzie, błąd
         2 - kalibracja, czekaj
         """
 
@@ -98,6 +98,11 @@ class TrackerZTM:
             
             if not self._sprawdz_zawartosc_w_odcinku(lat_a, lon_a, lat_b, lon_b, lat, lon):
                 przystanek_A, przystanek_B = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, pojazd['id_kursu'], lat, lon)
+
+                if przystanek_A == "-1" or przystanek_B == "-1":
+                    logger.warning(f"Autobus {linia}/{brygada} zgubił trasę. Czekam na powrót.")
+                    return 2
+            
                 pojazd['poprzedni_przystanek'] = przystanek_A
                 pojazd['nastpeny_przystanek'] = przystanek_B
 
@@ -119,7 +124,8 @@ class TrackerZTM:
                     pojazd['stan'] = "NA_PETLI"
                     logger.info(f"Linia {linia}/{brygada}: Zjazd na pętlę. Zakończono kurs {id_kursu}.")
             
-            return (obecny_metr_trasy, opoznienie)
+            nazwa_kursu = self.rozklady[linia][brygada][id_kursu]['trasa']
+            return (opoznienie, obecny_metr_trasy, nazwa_kursu)
 
         elif pojazd["stan"] == "NA_PETLI":
             nowy_kurs_id = pojazd['id_kursu'] + 1 

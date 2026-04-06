@@ -16,8 +16,6 @@ def setup_dane():
         jsonik = json.load(f)
         tracker.przystanki = jsonik
 
-    
-
     yield {'tracker': tracker, 'linie': linie}
 
 
@@ -118,11 +116,11 @@ def test_autobus_jedzie_szybko(setup_dane: dict):
     lat_1, lon_1 = tracker.przystanki[przystanek1['przystanek_id']]['lat'], tracker.przystanki[przystanek1['przystanek_id']]['lon']
     lat_2, lon_2 = tracker.przystanki[przystanek2['przystanek_id']]['lat'], tracker.przystanki[przystanek2['przystanek_id']]['lon']
 
-    # PING 1: Tuż przed przystankiem 1
+    # tuż przed przystankiem 1
     tracker.przetworz_pozycje(linia, TEST_BRYGADA, lat_1 - 0.0005, lon_1, CZAS_OBECNY)
     
-    # PING 2: za przystanek 1, mocno w stronę przystanku 2
-    # Dystans do przystanku 1 teraz rośnie, ale do 2 maleje.
+    # za przystanek 1, mocno w stronę przystanku 2
+    # dystans do przystanku 1 teraz rośnie, ale do 2 maleje
     wynik = tracker.przetworz_pozycje(linia, TEST_BRYGADA, lat_1 + (lat_2 - lat_1)*0.5, lon_1 + (lon_2 - lon_1)*0.5, CZAS_OBECNY + 30)
     
     assert wynik == 0
