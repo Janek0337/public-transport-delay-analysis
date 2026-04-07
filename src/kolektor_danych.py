@@ -1,6 +1,6 @@
 import requests
 import json
-from utils import czas_na_sekundy
+from src.utils import czas_na_sekundy
 from pathlib import Path
 import logging
 
@@ -163,8 +163,8 @@ def stworz_rozklad_linii(api_key: str, linia: str):
 
 def _pogrupuj_kursy(lista_brygad: dict[str, list]):
     pogrupowane_kursy = dict()
-    id_kursu = 0
     for brygada in lista_brygad.keys():
+        id_kursu = 0
         kursy_brygady = []
         przystanki = []
         for i, przystanek in enumerate(lista_brygad[brygada]):

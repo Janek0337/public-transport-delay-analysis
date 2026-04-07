@@ -60,6 +60,7 @@ class TrackerZTM:
         # to jest nieznany jeszcze autobus (niezainicjowany)
         if brygada not in self.pojazdy[linia]:
             self.pojazdy[linia][brygada] = stworz_nowy_stan(lat, lon, czas_gps)
+            logging.info(f"{linia}/{brygada}: oczekiwanie na więcej pingów")
             return 2 # przerywamy i czekamy na kolejne pingi
 
         pojazd = self.pojazdy[linia][brygada]
@@ -68,6 +69,7 @@ class TrackerZTM:
 
             # jesli pojazd nie ruszyl sie znaczoco to czekamy az sie ruszy
             if not utils.czy_pojazd_sie_ruszyl(pojazd['historia_gps'][0][0], pojazd['historia_gps'][0][1], lat, lon):
+                logging.info(f"{linia}/{brygada}: Brak ruchu, oczekiwanie na dalsze pomiary do inicjalizacji")
                 return 2
             
             # dodajemy nowy punkt do historii (to jest drugi punkt)
@@ -75,14 +77,25 @@ class TrackerZTM:
             
             rozklad_id = self._znajdz_rozklad(czas_gps, linia, brygada, lat, lon)
             if rozklad_id == -1:
+                pojazd["historia_gps"].pop()
+                logging.info(f"{linia}/{brygada}: Nie znaleziono trasy dla tego kursu")
                 return 1
+            elif rozklad_id == -2:
+                pojazd["historia_gps"].pop()
+                logging.info(f"{linia}/{brygada}: Inicjalizacja w pobliżu pętli, nie robię tego")
+                return 2
+            przystanek_A, przystanek_B = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, rozklad_id, lat, lon)
             
+            if przystanek_A == "-1" or przystanek_B == "-1":
+                pojazd["historia_gps"].pop()
+                logger.info(f"{linia}/{brygada}: Nie znaleziono pasującego do kursu położenia w rozkładzie")
+                return 2
+
             pojazd['id_kursu'] = rozklad_id
             pojazd['stan'] = 'W_TRASIE'
             pojazd['historia_gps'] = []
-            logger.info(f"Linia {linia}, brygada {brygada}: kurs_id: {rozklad_id}")
+            logger.info(f"{linia}/{brygada}: Udana inicjalizacja, przypisano kurs_id: {rozklad_id}")
 
-            przystanek_A, przystanek_B = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, pojazd['id_kursu'], lat, lon)
             pojazd['poprzedni_przystanek'] = przystanek_A
             pojazd['nastpeny_przystanek'] = przystanek_B
 
@@ -100,7 +113,22 @@ class TrackerZTM:
                 przystanek_A, przystanek_B = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, pojazd['id_kursu'], lat, lon)
 
                 if przystanek_A == "-1" or przystanek_B == "-1":
-                    logger.warning(f"Autobus {linia}/{brygada} zgubił trasę. Czekam na powrót.")
+                    nast_kurs_id = pojazd['id_kursu'] + 1
+                    while nast_kurs_id < len(self.rozklady[linia][brygada]) and len(self.rozklady[linia][brygada][nast_kurs_id]['przystanki']) < 2:
+                        nast_kurs_id += 1
+                        
+                    if nast_kurs_id < len(self.rozklady[linia][brygada]):
+                        czas_startu_nast = self.rozklady[linia][brygada][nast_kurs_id]['czas_startu']
+                        if czas_gps >= czas_startu_nast - 300:
+                            
+                            pA_nast, pB_nast = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, nast_kurs_id, lat, lon)
+                            if pA_nast != "-1":
+                                pojazd['id_kursu'] = nast_kurs_id
+                                pojazd['poprzedni_przystanek'] = pA_nast
+                                pojazd['nastpeny_przystanek'] = pB_nast
+                                logger.info(f"{linia}/{brygada}: Przeskoczył na kurs {nast_kurs_id} omijając strefę pętli")
+                                return 2
+                    logger.warning(f"{linia}/{brygada} się zgubił")
                     return 2
             
                 pojazd['poprzedni_przystanek'] = przystanek_A
@@ -122,7 +150,7 @@ class TrackerZTM:
             if przystanek_B['czas'] == czas_ostatniego_przystanku:
                 if utils.oblicz_odleglosc(lat_b, lon_b, lat, lon) < utils.DOKLADNOSC_GPS_M:
                     pojazd['stan'] = "NA_PETLI"
-                    logger.info(f"Linia {linia}/{brygada}: Zjazd na pętlę. Zakończono kurs {id_kursu}.")
+                    logger.info(f"{linia}/{brygada}: Zjazd na pętlę, zakończono kurs {id_kursu}.")
             
             nazwa_kursu = self.rozklady[linia][brygada][id_kursu]['trasa']
             return (opoznienie, obecny_metr_trasy, nazwa_kursu)
@@ -130,6 +158,9 @@ class TrackerZTM:
         elif pojazd["stan"] == "NA_PETLI":
             nowy_kurs_id = pojazd['id_kursu'] + 1 
             
+            while nowy_kurs_id < len(self.rozklady[linia][brygada]) and len(self.rozklady[linia][brygada][nowy_kurs_id]['przystanki']) < 2:
+                nowy_kurs_id += 1
+
             if nowy_kurs_id >= len(self.rozklady[linia][brygada]):
                 return 0 
                 
@@ -140,41 +171,51 @@ class TrackerZTM:
                 pojazd['id_kursu'] = nowy_kurs_id
                 pojazd['poprzedni_przystanek'] = self.rozklady[linia][brygada][nowy_kurs_id]['przystanki'][0]
                 pojazd['nastpeny_przystanek'] = self.rozklady[linia][brygada][nowy_kurs_id]['przystanki'][1]
-                logger.info(f"Linia {linia}/{brygada}: Rusza w nowy kurs {nowy_kurs_id}.")
+                logger.info(f"{linia}/{brygada}: Rusza w nowy kurs {nowy_kurs_id}")
                 return 0
-            
+            logger.info(f"{linia}/{brygada}: Stoi na pętli")
             return 0
 
     def _znajdz_rozklad(self, czas_teraz: int, linia: str, brygada: str, lat_sz: float, lon_sz: float) -> int:
 
-        okno_w_przod = utils.czas_na_sekundy('01:00:00')
+        okno_w_przod = utils.czas_na_sekundy('00:45:00')
         okno_w_tyl = utils.czas_na_sekundy('00:10:00')
 
         kandydaci = []
-        for kurs in self.rozklady[linia][brygada]:
+        for idx, kurs in enumerate(self.rozklady[linia][brygada]):
             if (czas_teraz >= kurs['czas_startu'] - okno_w_tyl 
             and czas_teraz <= kurs['czas_konca'] + okno_w_przod):
-                kandydaci.append(kurs)
+                kandydaci.append((idx, kurs))
 
         if len(kandydaci) == 0:
-            return -1 # BRAK TAKIEGO ROZKŁADU
-        elif len(kandydaci) == 1:
-            return kandydaci[0]['id_kursu']
+            return -1 # brak rozkladu
         
-        # jeśli jest > 1 kurs (zazwyczaj 2)
+        for idx, kurs in kandydaci:
+            if len(kurs['przystanki']) > 0:
+                id_start = kurs['przystanki'][0]['przystanek_id']
+                id_koniec = kurs['przystanki'][-1]['przystanek_id']
+                
+                lat_s, lon_s = self.przystanki[id_start]['lat'], self.przystanki[id_start]['lon']
+                lat_k, lon_k = self.przystanki[id_koniec]['lat'], self.przystanki[id_koniec]['lon']
+                
+                # jeśli jest w promieniu 200m od startu lub końca potencjalnej trasy to nie rozważamy go
+                if utils.oblicz_odleglosc(lat_sz, lon_sz, lat_s, lon_s) < 200 or utils.oblicz_odleglosc(lat_sz, lon_sz, lat_k, lon_k) < 200:
+                    return -2
+
+        if len(kandydaci) == 1:
+            return kandydaci[0][0]
+        
         przy_petli = None
-        for kurs in kandydaci:
+        for idx, kurs in kandydaci:
             przystanki = kurs['przystanki']
-            
-            # ten kurs jest z/do zajezdni
+        
             if len(przystanki) < 2:
                 continue
 
-            kolejne_id_najblizszych = self._znajdz_trzy_kolejne_najblizsze_przystanki_na_trasie(linia, brygada, kurs['id_kursu'], lat_sz, lon_sz)
+            kolejne_id_najblizszych = self._znajdz_trzy_kolejne_najblizsze_przystanki_na_trasie(linia, brygada, idx, lat_sz, lon_sz)
 
-            # najblizszy przystanek jest ostatni, najwyzej zostanie na koncu jak do zadnego innego kursu nie bedzie pasowac
             if len(kolejne_id_najblizszych) == 1:
-                przy_petli = kurs
+                przy_petli = idx
                 continue
 
             id_celu = kolejne_id_najblizszych[1]
@@ -191,7 +232,7 @@ class TrackerZTM:
             odl_B = utils.oblicz_odleglosc(lat_B, lon_B , lat_celu, lon_celu)
 
             if odl_A > odl_B:
-                return kurs['id_kursu']
+                return idx
             
             # to nie jest kurs, który za 2 przystanki ma zajezdnie
             if len(kolejne_id_najblizszych) == 3:
@@ -203,11 +244,11 @@ class TrackerZTM:
                 odl_B_cel2 = utils.oblicz_odleglosc(lat_B, lon_B, lat_celu_2, lon_celu_2)
 
                 if odl_A_cel2 > odl_B_cel2:
-                    return kurs['id_kursu']
+                    return idx
         
         # zostal ten jeden kurs co dojezdza do zajezdni
         if przy_petli is not None:
-            return przy_petli['id_kursu']
+            return przy_petli
         
         logging.warning(f"Żadna trasa nie pasuje do tego, co robi ten autobus!\nLinia: {linia}, Brygada: {brygada}")
         return -1
@@ -227,13 +268,13 @@ class TrackerZTM:
         przystanek_1_id = najblizszy_przystanek['przystanek_id']
         id_przystankow = [przystanek_1_id]
 
-        nr_kolejnosci_najblizszego = najblizszy_przystanek['nr_kolejnosci']
+        rzeczywisty_indeks = lista_przystankow_kursu.index(najblizszy_przystanek)
 
-        if nr_kolejnosci_najblizszego + 1 < len(lista_przystankow_kursu):
-            przystanek_2_id = lista_przystankow_kursu[nr_kolejnosci_najblizszego + 1]['przystanek_id']
+        if rzeczywisty_indeks + 1 < len(lista_przystankow_kursu):
+            przystanek_2_id = lista_przystankow_kursu[rzeczywisty_indeks + 1]['przystanek_id']
             id_przystankow.append(przystanek_2_id)
-            if nr_kolejnosci_najblizszego + 2 < len(lista_przystankow_kursu):
-                przystanek_3_id = lista_przystankow_kursu[nr_kolejnosci_najblizszego + 2]['przystanek_id']
+            if rzeczywisty_indeks + 2 < len(lista_przystankow_kursu):
+                przystanek_3_id = lista_przystankow_kursu[rzeczywisty_indeks + 2]['przystanek_id']
                 id_przystankow.append(przystanek_3_id)
 
         return id_przystankow
@@ -252,11 +293,10 @@ class TrackerZTM:
                 if self._sprawdz_zawartosc_w_odcinku(lat_a, lon_a, lat_b, lon_b, lat_sz, lon_sz):
                     return (lista_przystankow_kursu[i], lista_przystankow_kursu[i+1])
                 
-        logging.info(f"Linia {linia}, brygada {brygada}: nie znaleziono przypasowania okna.")
         return ("-1", "-1")
                 
     def _sprawdz_zawartosc_w_odcinku(self, lat_a: float, lon_a: float, lat_b: float, lon_b:  float, lat_c: float, lon_c: float) -> bool:
-        BUFOR_ROZNICY_M = 100
+        BUFOR_ROZNICY_M = 300
         dA = utils.oblicz_odleglosc(lat_c, lon_c, lat_a, lon_a)
         dB = utils.oblicz_odleglosc(lat_c, lon_c, lat_b, lon_b)
         dC = utils.oblicz_odleglosc(lat_b, lon_b, lat_a, lon_a)
