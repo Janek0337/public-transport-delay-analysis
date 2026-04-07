@@ -5,6 +5,10 @@ import os
 import src.kolektor_danych as kolektor_danych
 from src.TrackerZTM import TrackerZTM
 import time
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = ROOT_DIR / 'data'
 
 def main():
 
@@ -30,35 +34,39 @@ def main():
         kolektor_danych.stworz_rozklad_linii(API_KEY, linia)
 
     tracker = TrackerZTM(linie)
-    while True:
-        logging.info("Pobieram dane o położeniu...")
-        czas_start = time.time()
-        lista_polozen = kolektor_danych.zbierz_obecne_polozenie(API_KEY, linie)
-        for pojazd in lista_polozen:
-            linia = pojazd['linia']
-            brygada = pojazd['brygada']
-            lat = pojazd['lat']
-            lon = pojazd['lon']
-            czas_gps = pojazd['czas']
-            czas_str = pojazd['czas_str']
-            wynik_przetwarzania = tracker.przetworz_pozycje(linia, brygada, lat, lon, czas_gps)
-            if isinstance(wynik_przetwarzania, int):
-                if wynik_przetwarzania == 2:
-                    #logging.info(f"Pojazd {linia}/{brygada} oczekuje na dalsze pomiary...")
-                    continue
-                if wynik_przetwarzania == 1:
-                    #logging.warning(f"Problem ze znalezieniem pojazdu {linia}/{brygada}")
-                    continue
-            
-            if isinstance(wynik_przetwarzania, tuple):
-                opoznienie, metr, nazwa_trasy = wynik_przetwarzania
-                znak = "+" if opoznienie >= 0 else "-"
-                abs_opoznienie = abs(int(opoznienie))
-                minuty, sekundy = divmod(abs_opoznienie, 60)
+    with open(f'{DATA_DIR}/out.csv', 'w') as f:
+        while True:
+            logging.info("Pobieram dane o położeniu...")
+            czas_start = time.time()
+            lista_polozen = kolektor_danych.zbierz_obecne_polozenie(API_KEY, linie)
+            for pojazd in lista_polozen:
+                linia = pojazd['linia']
+                brygada = pojazd['brygada']
+                lat = pojazd['lat']
+                lon = pojazd['lon']
+                czas_gps = pojazd['czas']
+                czas_str = pojazd['czas_str']
+                wynik_przetwarzania = tracker.przetworz_pozycje(linia, brygada, lat, lon, czas_gps)
+                if isinstance(wynik_przetwarzania, int):
+                    if wynik_przetwarzania == 2:
+                        #logging.info(f"Pojazd {linia}/{brygada} oczekuje na dalsze pomiary...")
+                        continue
+                    if wynik_przetwarzania == 1:
+                        #logging.warning(f"Problem ze znalezieniem pojazdu {linia}/{brygada}")
+                        continue
+                
+                if isinstance(wynik_przetwarzania, tuple):
+                    opoznienie, metr, nazwa_trasy = wynik_przetwarzania
+                    znak = "+" if opoznienie >= 0 else "-"
+                    abs_opoznienie = abs(int(opoznienie))
+                    minuty, sekundy = divmod(abs_opoznienie, 60)
 
-                logging.info(f"Pojazd {linia}/{brygada} | Trasa: {nazwa_trasy} | Metr: {metr}m | Status: {znak}{minuty}m {sekundy}s")
+                    logging.info(f"Pojazd {linia}/{brygada} | Trasa: {nazwa_trasy} | Metr: {metr}m | Status: {znak}{minuty}m {sekundy}s")
+                    linia_tekstu = f"{linia};{brygada};{nazwa_trasy};{metr:.2f};{znak};{minuty};{sekundy};{opoznienie:.0f}\n"
+                    f.write(linia_tekstu)
 
-        time.sleep(max(0, 16 - (time.time() - czas_start)))
+            time.sleep(max(0, 16 - (time.time() - czas_start)))
+
 
     logger.info("Finished")
 
