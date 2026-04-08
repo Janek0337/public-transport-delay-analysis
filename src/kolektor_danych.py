@@ -21,7 +21,7 @@ def stworz_trase_linii(api_key: str, linia: str):
 
     try:
         logging.info(f'Pobieram trasę linii {linia}')
-        res = requests.get(url=URL, params=params)
+        res = requests.get(url=URL, params=params, timeout=10)
         res.raise_for_status()
         data = res.json()
         
@@ -99,7 +99,7 @@ def stworz_rozklad_linii(api_key: str, linia: str):
             'line': linia
         }
         try:
-            res = requests.get(url=URL, params=params)
+            res = requests.get(url=URL, params=params, timeout=10)
             res.raise_for_status()
             data = res.json()
 
@@ -209,7 +209,7 @@ def stworz_baze_polozen_przystankow(api_key: str):
     }
 
     try:
-        res = requests.get(url=PRZYSTANKI_URL, params=params)
+        res = requests.get(url=PRZYSTANKI_URL, params=params, timeout=10)
         res.raise_for_status()
         data = res.json()
     except Exception as e:
@@ -253,7 +253,7 @@ def zbierz_obecne_polozenie(api_key: str, linie: list[str]) -> list[dict]:
     }
 
     try:
-        res = requests.post(url=BUS_LOC_URL, params=params)
+        res = requests.post(url=BUS_LOC_URL, params=params, timeout=10)
         res.raise_for_status()
         data = res.json()
 
