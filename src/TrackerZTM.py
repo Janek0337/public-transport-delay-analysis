@@ -9,7 +9,7 @@ GpsPoint = Tuple[float, float, int] # lat, lon, czas_s
 class StanPojazdu(TypedDict):
     stan: str
     historia_gps: List[GpsPoint]
-    id_kursu: Optional[int]
+    id_kursu: int
     nastpeny_przystanek: dict | None
     poprzedni_przystanek: dict | None
     ostatnie_metry: list
@@ -21,7 +21,7 @@ def stworz_nowy_stan(lat: float, lon: float, czas: int) -> StanPojazdu:
     return {
         'stan': 'INICJALIZACJA',
         'historia_gps': [(lat, lon, czas)],
-        'id_kursu': None,
+        'id_kursu': -1,
         'nastpeny_przystanek': None,
         'poprzedni_przystanek': None,
         'ostatnie_metry': []
@@ -92,7 +92,7 @@ class TrackerZTM:
                 return 2
             przystanek_A, przystanek_B = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, rozklad_id, lat, lon)
             
-            if przystanek_A == "-1" or przystanek_B == "-1":
+            if (not bool(przystanek_A) or not bool(przystanek_B)):
                 pojazd["historia_gps"].pop()
                 logger.info(f"{linia}/{brygada}: Nie znaleziono pasującego do kursu położenia w rozkładzie")
                 return 2
@@ -118,7 +118,7 @@ class TrackerZTM:
             if not self._sprawdz_zawartosc_w_odcinku(lat_a, lon_a, lat_b, lon_b, lat, lon):
                 przystanek_A, przystanek_B = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, pojazd['id_kursu'], lat, lon)
 
-                if przystanek_A == "-1" or przystanek_B == "-1":
+                if (not bool(przystanek_A) or not bool(przystanek_B)):
                     nast_kurs_id = pojazd['id_kursu'] + 1
                     while nast_kurs_id < len(self.rozklady[linia][brygada]) and len(self.rozklady[linia][brygada][nast_kurs_id]['przystanki']) < 2:
                         nast_kurs_id += 1
@@ -128,7 +128,7 @@ class TrackerZTM:
                         if czas_gps >= czas_startu_nast - 300:
                             
                             pA_nast, pB_nast = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, nast_kurs_id, lat, lon)
-                            if pA_nast != "-1":
+                            if not bool(pA_nast):
                                 pojazd['id_kursu'] = nast_kurs_id
                                 pojazd['poprzedni_przystanek'] = pA_nast
                                 pojazd['nastpeny_przystanek'] = pB_nast
@@ -146,11 +146,29 @@ class TrackerZTM:
             przebyty_odcinek = proporcja_przebytej_drogi*(metr2 - metr1)
             obecny_metr_trasy = metr1 + przebyty_odcinek
 
-            # sprawdzenie trendu ruchu, czy zgodny z kierunkiem wybranej trasy
+            # sprawdzenie trendu ruchu, czy zgodny z kierunkiem wybranej trasy i czy jesli sie nie rusza to czy nie jest przypadkiem zawieszony na pętli
             pojazd['ostatnie_metry'].append(obecny_metr_trasy)
+            id_kursu = pojazd['id_kursu']
             if len(pojazd['ostatnie_metry']) > 1:
                 roznica1 = pojazd['ostatnie_metry'][-1] - pojazd['ostatnie_metry'][-2]
                 if abs(roznica1) < utils.DOKLADNOSC_GPS_M:
+
+                    id_pierwszego_przystanku = self.rozklady[linia][brygada][id_kursu]['przystanki'][0]['przystanek_id']
+                    id_ostatniego_przystanku = self.rozklady[linia][brygada][id_kursu]['przystanki'][-1]['przystanek_id']
+
+                    lat_pierwszego = self.przystanki[id_pierwszego_przystanku]['lat']
+                    lon_pierwszego = self.przystanki[id_pierwszego_przystanku]['lon']
+
+                    lat_ostatniego = self.przystanki[id_ostatniego_przystanku]['lat']
+                    lon_ostatniego = self.przystanki[id_ostatniego_przystanku]['lon']
+
+                    if (utils.oblicz_odleglosc(lat, lon, lat_pierwszego, lon_pierwszego) < utils.OCZEKIWANA_ODL_OD_KONCA or
+                        utils.oblicz_odleglosc(lat, lon, lat_ostatniego, lon_ostatniego) < utils.OCZEKIWANA_ODL_OD_KONCA):
+                        logging.warning(f'{linia}/{brygada}: zgubił się na pętli. Reinicjalizuję')
+                        czysty_stan = stworz_nowy_stan(lat, lon, czas_gps)
+                        self.pojazdy[linia][brygada] = czysty_stan
+                        return 2
+
                     pojazd['ostatnie_metry'].pop()
                 else:
                     if len(pojazd['ostatnie_metry']) == 3:            
@@ -176,12 +194,10 @@ class TrackerZTM:
                 return 2
 
             # sprawdzamy czy nie jest już na pętli
-            id_kursu = pojazd['id_kursu']
             czas_ostatniego_przystanku = self.rozklady[linia][brygada][id_kursu]['czas_konca']
             if przystanek_B['czas'] == czas_ostatniego_przystanku:
                 odleglosc_od_konca = utils.oblicz_odleglosc(lat_b, lon_b, lat, lon)
-                OCZEKIWANA_ODL_OD_KONCA = 150.0
-                if odleglosc_od_konca < OCZEKIWANA_ODL_OD_KONCA or proporcja_przebytej_drogi >= 0.9:
+                if odleglosc_od_konca < utils.OCZEKIWANA_ODL_OD_KONCA or proporcja_przebytej_drogi >= 0.9:
                     pojazd['stan'] = "NA_PETLI"
                     logger.info(f"{linia}/{brygada}: Zjazd na pętlę. Zakończono kurs {id_kursu}.")
             
@@ -323,7 +339,7 @@ class TrackerZTM:
                 if self._sprawdz_zawartosc_w_odcinku(lat_a, lon_a, lat_b, lon_b, lat_sz, lon_sz):
                     return (lista_przystankow_kursu[i], lista_przystankow_kursu[i+1])
                 
-        return ("-1", "-1")
+        return (dict(), dict())
                 
     def _sprawdz_zawartosc_w_odcinku(self, lat_a: float, lon_a: float, lat_b: float, lon_b:  float, lat_c: float, lon_c: float) -> bool:
         BUFOR_ROZNICY_M = 300

@@ -3,7 +3,8 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / 'data'
-DOKLADNOSC_GPS_M = 30
+DOKLADNOSC_GPS_M = 30.0
+OCZEKIWANA_ODL_OD_KONCA = 150.0
 
 def oblicz_odleglosc(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371000.0

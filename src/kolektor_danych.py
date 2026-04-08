@@ -20,6 +20,7 @@ def stworz_trase_linii(api_key: str, linia: str):
     }
 
     try:
+        logging.info(f'Pobieram trasę linii {linia}')
         res = requests.get(url=URL, params=params)
         res.raise_for_status()
         data = res.json()
