@@ -40,7 +40,8 @@ def test_normalna_jazda(setup_dane: dict):
         'historia_gps': [],
         'id_kursu': 0,
         'poprzedni_przystanek': przystanek_1,
-        'nastpeny_przystanek': przystanek_2
+        'nastpeny_przystanek': przystanek_2,
+        'ostatnie_metry': []
     }
 
     lat_polowa = (lat_1 + lat_2) / 2.0
@@ -89,7 +90,8 @@ def test_za_nastepnym_przystankiem(setup_dane: dict):
         'historia_gps': [],
         'id_kursu': 0,
         'poprzedni_przystanek': przystanek_1,
-        'nastpeny_przystanek': przystanek_2
+        'nastpeny_przystanek': przystanek_2,
+        'ostatnie_metry': []
     }
 
     lat_polowa = (lat_3 + lat_2) / 2.0
@@ -139,7 +141,8 @@ def test_przed_poprzednim_przystankiem(setup_dane: dict):
         'historia_gps': [],
         'id_kursu': 0,
         'poprzedni_przystanek': przystanek_2,
-        'nastpeny_przystanek': przystanek_3
+        'nastpeny_przystanek': przystanek_3,
+        'ostatnie_metry': []
     }
 
     lat_polowa = (lat_1 + lat_2) / 2.0
@@ -186,7 +189,8 @@ def test_przy_petli(setup_dane: dict):
         'historia_gps': [],
         'id_kursu': 0,
         'poprzedni_przystanek': przystanek_1,
-        'nastpeny_przystanek': przystanek_2
+        'nastpeny_przystanek': przystanek_2,
+        'ostatnie_metry': []
     }
 
     lat_petla = lat_2
@@ -223,7 +227,8 @@ def test_zgubiony_autobus(setup_dane: dict):
         'historia_gps': [],
         'id_kursu': 0,
         'poprzedni_przystanek': przystanek_1,
-        'nastpeny_przystanek': przystanek_2
+        'nastpeny_przystanek': przystanek_2,
+        'ostatnie_metry': []
     }
 
     # autobus gdzieś niewiadomo gdzie totalnie 1 stopień lat i lon gdzie indziej (ok. 71km)
@@ -236,3 +241,44 @@ def test_zgubiony_autobus(setup_dane: dict):
     
     assert wynik == 2
     assert tracker.pojazdy[linia][TEST_BRYGADA]['poprzedni_przystanek'] == przystanek_1
+
+def test_autobus_jedzie_w_zla_strone(setup_dane: dict):
+    tracker = setup_dane['tracker']
+    linia = setup_dane['linie'][0]
+    TEST_BRYGADA = "1"
+    
+    kurs = tracker.rozklady[linia][TEST_BRYGADA][0]
+    przystanek_1 = kurs['przystanki'][1]
+    przystanek_2 = kurs['przystanki'][2]
+    
+    tracker.pojazdy[linia][TEST_BRYGADA] = {
+        'stan': 'W_TRASIE',
+        'historia_gps': [],
+        'id_kursu': 0,
+        'poprzedni_przystanek': przystanek_1,
+        'nastpeny_przystanek': przystanek_2,
+        'ostatnie_metry': []
+    }
+
+    lat1 = tracker.przystanki[przystanek_1['przystanek_id']]['lat']
+    lon1 = tracker.przystanki[przystanek_1['przystanek_id']]['lon']
+
+    lat3 = tracker.przystanki[przystanek_2['przystanek_id']]['lat']
+    lon3 = tracker.przystanki[przystanek_2['przystanek_id']]['lon']
+
+    lat2 = (lat1 + lat3) / 2.0
+    lon2 = (lon1 + lon3) / 2.0
+
+    czas_gps = przystanek_1['czas'] + 60
+    wynik = tracker.przetworz_pozycje(linia, TEST_BRYGADA, lat3, lon3, czas_gps)
+    assert tracker.pojazdy[linia][TEST_BRYGADA]['stan'] == 'W_TRASIE'
+
+    czas_gps = przystanek_1['czas'] + 70
+    wynik = tracker.przetworz_pozycje(linia, TEST_BRYGADA, lat2, lon2, czas_gps)
+    assert tracker.pojazdy[linia][TEST_BRYGADA]['stan'] == 'W_TRASIE'
+
+    czas_gps = przystanek_1['czas'] + 80
+    wynik = tracker.przetworz_pozycje(linia, TEST_BRYGADA, lat1, lon1, czas_gps)
+    
+    assert wynik == 2
+    assert tracker.pojazdy[linia][TEST_BRYGADA]['stan'] == 'INICJALIZACJA'

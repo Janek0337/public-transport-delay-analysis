@@ -12,6 +12,7 @@ class StanPojazdu(TypedDict):
     id_kursu: Optional[int]
     nastpeny_przystanek: dict | None
     poprzedni_przystanek: dict | None
+    ostatnie_metry: list
 
 BrygadaInfo = dict[str, StanPojazdu] # numer_brygady: StanPojazdu
 LinieInfo = dict[str, BrygadaInfo] # numer_linii: BrygadaInfo
@@ -22,7 +23,8 @@ def stworz_nowy_stan(lat: float, lon: float, czas: int) -> StanPojazdu:
         'historia_gps': [(lat, lon, czas)],
         'id_kursu': None,
         'nastpeny_przystanek': None,
-        'poprzedni_przystanek': None
+        'poprzedni_przystanek': None,
+        'ostatnie_metry': []
     }
 
 class TrackerZTM:
@@ -144,15 +146,33 @@ class TrackerZTM:
             przebyty_odcinek = proporcja_przebytej_drogi*(metr2 - metr1)
             obecny_metr_trasy = metr1 + przebyty_odcinek
 
+            # sprawdzenie trendu ruchu, czy zgodny z kierunkiem wybranej trasy
+            pojazd['ostatnie_metry'].append(obecny_metr_trasy)
+            if len(pojazd['ostatnie_metry']) > 1:
+                roznica1 = pojazd['ostatnie_metry'][-1] - pojazd['ostatnie_metry'][-2]
+                if abs(roznica1) < utils.DOKLADNOSC_GPS_M:
+                    pojazd['ostatnie_metry'].pop()
+                else:
+                    if len(pojazd['ostatnie_metry']) == 3:            
+                        if roznica1 < 0:
+                            roznica2 = pojazd['ostatnie_metry'][-2] - pojazd['ostatnie_metry'][-3]
+                            if roznica2 < 0:
+                                logging.info(f"{linia}/{brygada}: Trend ruchu przeciwny do wybranej trasy, reinicjalizacja")
+                                czysty_stan = stworz_nowy_stan(lat, lon, czas_gps)
+                                self.pojazdy[linia][brygada] = czysty_stan
+                                return 2
+                        pojazd['ostatnie_metry'].pop(0)
+
+
+
             czas1, czas2 = przystanek_A['czas'], przystanek_B['czas']
             czas_oczekiwany_rozkladowy = czas1 + proporcja_przebytej_drogi*(czas2 - czas1)
             opoznienie = czas_gps - czas_oczekiwany_rozkladowy
 
             if opoznienie > 3600 or opoznienie < -600:
                 logger.warning(f"{linia}/{brygada}: Nienaturalne opóźnienie ({int(opoznienie/60)}min). Pojazd do reinicjalizacji")
-                pojazd['stan'] = 'INICJALIZACJA'
-                pojazd['historia_gps'] = []
-                pojazd['id_kursu'] = None
+                czysty_stan = stworz_nowy_stan(lat, lon, czas_gps)
+                self.pojazdy[linia][brygada] = czysty_stan
                 return 2
 
             # sprawdzamy czy nie jest już na pętli
@@ -184,6 +204,7 @@ class TrackerZTM:
                 pojazd['id_kursu'] = nowy_kurs_id
                 pojazd['poprzedni_przystanek'] = self.rozklady[linia][brygada][nowy_kurs_id]['przystanki'][0]
                 pojazd['nastpeny_przystanek'] = self.rozklady[linia][brygada][nowy_kurs_id]['przystanki'][1]
+                pojazd['ostatnie_metry'] = []
                 logger.info(f"{linia}/{brygada}: Rusza w nowy kurs {nowy_kurs_id}")
                 return 0
             logger.info(f"{linia}/{brygada}: Stoi na pętli")
