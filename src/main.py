@@ -54,62 +54,78 @@ def main():
 
     nazwa_pliku_wyjsciowego = f'{DATA_DIR}/out.csv'
     plik_istnieje = os.path.isfile(nazwa_pliku_wyjsciowego)
+    BUFOR_STANOW = dict()
 
     with open(nazwa_pliku_wyjsciowego , mode='a', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=naglowki, delimiter=';')
         if not plik_istnieje:
             writer.writeheader()
+        try:
+            while True:
+                logging.info("Pobieram dane o położeniu...")
+                czas_start = time.time()
+                lista_polozen = kolektor_danych.zbierz_obecne_polozenie(API_KEY, linie)
+                for pojazd in lista_polozen:
+                    linia = pojazd['linia']
+                    brygada = pojazd['brygada']
+                    lat = pojazd['lat']
+                    lon = pojazd['lon']
+                    czas_gps = pojazd['czas']
+                    czas_str = pojazd['czas_str']
+                    oznaczenie_kursu = f'{linia}/{brygada}'
+                    wynik_przetwarzania = tracker.przetworz_pozycje(linia, brygada, lat, lon, czas_gps)
 
-        while True:
-            logging.info("Pobieram dane o położeniu...")
-            czas_start = time.time()
-            lista_polozen = kolektor_danych.zbierz_obecne_polozenie(API_KEY, linie)
-            for pojazd in lista_polozen:
-                linia = pojazd['linia']
-                brygada = pojazd['brygada']
-                lat = pojazd['lat']
-                lon = pojazd['lon']
-                czas_gps = pojazd['czas']
-                czas_str = pojazd['czas_str']
-                wynik_przetwarzania = tracker.przetworz_pozycje(linia, brygada, lat, lon, czas_gps)
-                if isinstance(wynik_przetwarzania, int):
-                    if wynik_przetwarzania == 2:
-                        #logging.info(f"Pojazd {linia}/{brygada} oczekuje na dalsze pomiary...")
-                        continue
-                    if wynik_przetwarzania == 1:
-                        #logging.warning(f"Problem ze znalezieniem pojazdu {linia}/{brygada}")
-                        continue
-                
-                if isinstance(wynik_przetwarzania, tuple):
-                    opoznienie, metr, nazwa_trasy = wynik_przetwarzania
-                    znak = "+" if opoznienie >= 0 else "-"
-                    abs_opoznienie = abs(int(opoznienie))
-                    minuty, sekundy = divmod(abs_opoznienie, 60)
+                    if isinstance(wynik_przetwarzania, tuple):
+                        opoznienie, metr, nazwa_trasy = wynik_przetwarzania
+                        znak = "+" if opoznienie >= 0 else "-"
+                        abs_opoznienie = abs(int(opoznienie))
+                        minuty, sekundy = divmod(abs_opoznienie, 60)
 
-                    pogoda_tu = pogoda.pogoda_dla_punktu(lat, lon)
-                    rekord = {
-                        'czas_str': czas_str,
-                        'linia': linia,
-                        'brygada': brygada,
-                        'nazwa_trasy': nazwa_trasy,
-                        'lat': lat,
-                        'lon': lon,
-                        'metr': f'{metr:.2f}',
-                        'opoznienie_str': f'{znak}{minuty:02d}:{sekundy:02d}',
-                        'opoznienie': f'{opoznienie:.0f}',
-                        'temperatura': pogoda_tu.temperatura,
-                        'czy_dzien': pogoda_tu.czy_dzien,
-                        'opad_deszczu': pogoda_tu.opad_deszczu,
-                        'opad_sniegu': pogoda_tu.opad_sniegu,
-                        'poryw_wiatru': pogoda_tu.poryw_wiatru
-                    }
-                    logging.info(f"Pojazd {linia}/{brygada} | Trasa: {nazwa_trasy} | Metr: {metr:.2f}m | Status: {znak}{minuty}m {sekundy}s")
-                    writer.writerow(rekord)
+                        pogoda_tu = pogoda.pogoda_dla_punktu(lat, lon)
+                        rekord = {
+                            'czas_str': czas_str,
+                            'linia': linia,
+                            'brygada': brygada,
+                            'nazwa_trasy': nazwa_trasy,
+                            'lat': lat,
+                            'lon': lon,
+                            'metr': f'{metr:.2f}',
+                            'opoznienie_str': f'{znak}{minuty:02d}:{sekundy:02d}',
+                            'opoznienie': f'{opoznienie:.0f}',
+                            'temperatura': pogoda_tu.temperatura,
+                            'czy_dzien': pogoda_tu.czy_dzien,
+                            'opad_deszczu': pogoda_tu.opad_deszczu,
+                            'opad_sniegu': pogoda_tu.opad_sniegu,
+                            'poryw_wiatru': pogoda_tu.poryw_wiatru
+                        }
+                        logging.info(f"Pojazd {linia}/{brygada} | Trasa: {nazwa_trasy} | Metr: {metr:.2f}m | Status: {znak}{minuty}m {sekundy}s")
 
-            time.sleep(max(0, 16 - (time.time() - czas_start)))
-    f.flush()
+                        if oznaczenie_kursu not in BUFOR_STANOW:
+                            BUFOR_STANOW[oznaczenie_kursu] = [rekord]
+                        else:
+                            BUFOR_STANOW[oznaczenie_kursu].append(rekord)
+                            if len(BUFOR_STANOW[oznaczenie_kursu]) == 6:
+                                writer.writerows(BUFOR_STANOW[oznaczenie_kursu])
+                                BUFOR_STANOW[oznaczenie_kursu] = []
 
-    logger.info("Koniec")
+                    elif wynik_przetwarzania in (1, 2):
+                        # błąd/reinicjalizacja
+                        BUFOR_STANOW[oznaczenie_kursu] = []
+
+                    elif wynik_przetwarzania == 0:
+                        # koniec kursu
+                        if oznaczenie_kursu in BUFOR_STANOW and BUFOR_STANOW[oznaczenie_kursu]:
+                            writer.writerows(BUFOR_STANOW[oznaczenie_kursu])
+                            BUFOR_STANOW[oznaczenie_kursu] = []
+                    
+                time.sleep(max(0, 16 - (time.time() - czas_start)))
+
+        except KeyboardInterrupt:
+            f.flush()
+            for kurs, rekordy in BUFOR_STANOW.items():
+                if rekordy:
+                    writer.writerows(rekordy)
+            logger.info("Koniec")
 
 if __name__ == "__main__":
     main()

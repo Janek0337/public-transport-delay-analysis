@@ -57,7 +57,8 @@ class WeatherTracker:
             snowfall = current.Variables(4).Value()
             wind_gust = current.Variables(5).Value()
 
-            stany_pogody[(int(lat*self.dokladnosc), int(lon*self.dokladnosc))] = StanPogody(lat, lon, int(round(temperature)), round(rain + shower, 1), int(round(is_day)), round(snowfall, 1), int(round(wind_gust)))
+            stany_pogody[(int(lat*self.dokladnosc), int(lon*self.dokladnosc))] = StanPogody(lat, lon, int(round(temperature)),
+                                round(rain + shower, 1), int(round(is_day)), round(snowfall, 1), int(round(wind_gust)))
 
         return stany_pogody
     
