@@ -248,7 +248,7 @@ class TrackerZTM:
                 lat_k, lon_k = self.przystanki[id_koniec]['lat'], self.przystanki[id_koniec]['lon']
                 
                 # jeśli jest w promieniu 200m od startu lub końca potencjalnej trasy to nie rozważamy go
-                if utils.oblicz_odleglosc(lat_sz, lon_sz, lat_s, lon_s) < 200 or utils.oblicz_odleglosc(lat_sz, lon_sz, lat_k, lon_k) < 200:
+                if utils.oblicz_odleglosc(lat_sz, lon_sz, lat_s, lon_s) < utils.OCZEKIWANA_ODL_OD_KONCA or utils.oblicz_odleglosc(lat_sz, lon_sz, lat_k, lon_k) < utils.OCZEKIWANA_ODL_OD_KONCA:
                     return -2
 
         if len(kandydaci) == 1:
@@ -340,12 +340,11 @@ class TrackerZTM:
         return (dict(), dict())
                 
     def _sprawdz_zawartosc_w_odcinku(self, lat_a: float, lon_a: float, lat_b: float, lon_b:  float, lat_c: float, lon_c: float) -> bool:
-        BUFOR_ROZNICY_M = 300
         dA = utils.oblicz_odleglosc(lat_c, lon_c, lat_a, lon_a)
         dB = utils.oblicz_odleglosc(lat_c, lon_c, lat_b, lon_b)
         dC = utils.oblicz_odleglosc(lat_b, lon_b, lat_a, lon_a)
 
-        return dA + dB <= dC + BUFOR_ROZNICY_M
+        return dA + dB <= dC + utils.MAX_ODLEGLOSC_OD_PROSTEJ_TRASY_M
     
     def _oblicz_proporcje_przebytej_trasy(self, przystanek_A: dict, przystanek_B: dict, lat_sz: float, lon_sz: float) -> float:
         

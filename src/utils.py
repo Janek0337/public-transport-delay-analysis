@@ -5,7 +5,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / 'data'
 LOGS_DIR = ROOT_DIR / 'logs'
 DOKLADNOSC_GPS_M = 30.0
-OCZEKIWANA_ODL_OD_KONCA = 150.0
+OCZEKIWANA_ODL_OD_KONCA = 400.0
+MAX_ODLEGLOSC_OD_PROSTEJ_TRASY_M = 300
 
 def oblicz_odleglosc(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371000.0

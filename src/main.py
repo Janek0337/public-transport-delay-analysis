@@ -29,8 +29,8 @@ def main():
         logging.error("Klucz api w pliku .env jets pusty")
         exit(1)
 
-    kolektor_danych.stworz_baze_polozen_przystankow(API_KEY)
-    linie = ['523', '148']
+    #kolektor_danych.stworz_baze_polozen_przystankow(API_KEY)
+    linie = ['116', '138', '148', '156', '157', '185', '189', '500', '504', '509', '517', '523']
     for linia in linie:
         kolektor_danych.stworz_trase_linii(API_KEY, linia)
         kolektor_danych.stworz_rozklad_linii(API_KEY, linia)
@@ -47,7 +47,7 @@ def main():
     pogoda = WeatherTracker(punkty_pogodowe)
 
     naglowki = [
-    'czas_str', 'linia', 'brygada', 'nazwa_trasy', 'lat', 'lon', 
+    'czas_str', 'timestamp', 'linia', 'brygada', 'nazwa_trasy', 'lat', 'lon', 
     'metr', 'opoznienie_str', 'opoznienie', 'temperatura', 
     'czy_dzien', 'opad_deszczu', 'opad_sniegu', 'poryw_wiatru'
     ]
@@ -84,6 +84,7 @@ def main():
                         pogoda_tu = pogoda.pogoda_dla_punktu(lat, lon)
                         rekord = {
                             'czas_str': czas_str,
+                            'timestamp': int(time.time()),
                             'linia': linia,
                             'brygada': brygada,
                             'nazwa_trasy': nazwa_trasy,
