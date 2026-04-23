@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from src.WeatherTracker import WeatherTracker
 import csv
+import src.utils as utils
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / 'data'
@@ -29,7 +30,7 @@ def main():
         logging.error("Klucz api w pliku .env jets pusty")
         exit(1)
 
-    #kolektor_danych.stworz_baze_polozen_przystankow(API_KEY)
+    kolektor_danych.stworz_baze_polozen_przystankow(API_KEY)
     linie = ['114', '116', '138', '148', '157', '185', '189', '500', '504', '509', '517', '523']
     for linia in linie:
         kolektor_danych.stworz_trase_linii(API_KEY, linia)
@@ -37,13 +38,7 @@ def main():
 
     tracker = TrackerZTM(linie)
 
-    punkt_wiatraczna = (52.245051314579435, 21.084365124034683)
-    punkt_politechnika = (52.245051314579435, 21.084365124034683)
-    punkt_metro_bemowo = (52.239277502745445, 20.913181966913832)
-    punkt_sggw = (52.158511701349056, 21.0477039225247)
-    punkt_dworzec_zachodni = (52.218013523486285, 20.96285349533098)
-    punkt_siekierki = (52.192605097067535, 21.04882025589122)
-    punkty_pogodowe = [punkt_wiatraczna, punkt_politechnika, punkt_metro_bemowo, punkt_sggw, punkt_dworzec_zachodni, punkt_siekierki]
+    punkty_pogodowe = utils.wyznacz_punkty_pomiarowe_pogody(linie)
     pogoda = WeatherTracker(punkty_pogodowe)
 
     naglowki = [
