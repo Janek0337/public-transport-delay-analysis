@@ -1,17 +1,16 @@
 import logging
 from src.logger_setup import setup_logger
+from src.WeatherTracker import WeatherTracker
 from dotenv import load_dotenv, find_dotenv
 import os
 import src.kolektor_danych as kolektor_danych
 from src.TrackerZTM import TrackerZTM
 import time
 from pathlib import Path
-from src.WeatherTracker import WeatherTracker
 import csv
 import src.utils as utils
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT_DIR / 'data'
+from datetime import datetime
+from src.utils import OUTPUT_DIR
 
 def main():
 
@@ -47,7 +46,8 @@ def main():
     'czy_dzien', 'opad_deszczu', 'opad_sniegu', 'poryw_wiatru'
     ]
 
-    nazwa_pliku_wyjsciowego = f'{DATA_DIR}/out.csv'
+    data_dzisiaj = datetime.today().strftime('%Y-%m-%d')
+    nazwa_pliku_wyjsciowego = OUTPUT_DIR / f'{data_dzisiaj}_out.csv'
     plik_istnieje = os.path.isfile(nazwa_pliku_wyjsciowego)
     BUFOR_STANOW = dict()
 

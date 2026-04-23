@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / 'data'
 LOGS_DIR = ROOT_DIR / 'logs'
+OUTPUT_DIR = ROOT_DIR / 'output'
 DOKLADNOSC_GPS_M = 30.0
 OCZEKIWANA_ODL_OD_KONCA = 500.0
 MAX_ODLEGLOSC_OD_PROSTEJ_TRASY_M = 350
@@ -72,7 +73,7 @@ def wyznacz_punkty_pomiarowe_pogody(linie: list[str]) -> list[tuple[float, float
             lon = przystanki[przystanek_id]['lon']
             wspolrzedne.append([lat, lon])
 
-    zakres_k_centroidow = range(10, 30)
+    zakres_k_centroidow = range(5, 25)
     wyniki_sylwetek = {k: [] for k in zakres_k_centroidow}
     iteracji_usredniajacych = 20
 

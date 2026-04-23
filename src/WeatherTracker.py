@@ -33,8 +33,6 @@ class WeatherTracker:
         retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
         openmeteo = openmeteo_requests.Client(session = retry_session)
 
-        # Make sure all required weather variables are listed here
-        # The order of variables in hourly or daily is important to assign them correctly below
         params = {
             "latitude": [x[0]/self.dokladnosc for x in self.stacje_pomiarowe],
             "longitude": [x[1]/self.dokladnosc for x in self.stacje_pomiarowe],
@@ -43,12 +41,11 @@ class WeatherTracker:
         }
         responses = openmeteo.weather_api(self.url, params=params)
 
-        # Process first location. Add a for-loop for multiple locations or weather models
         stany_pogody = dict()
         for _, location in enumerate(responses):
             lat = location.Latitude()
             lon = location.Longitude()
-            # Process current data. The order of variables needs to be the same as requested.
+            # The order of variables needs to be the same as requested.
             current = location.Current()
             temperature = current.Variables(0).Value()
             rain = current.Variables(1).Value()
