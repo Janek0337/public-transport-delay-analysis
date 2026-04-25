@@ -14,6 +14,7 @@ class StanPojazdu(TypedDict):
     nastpeny_przystanek: dict | None
     poprzedni_przystanek: dict | None
     ostatnie_metry: list
+    ostatni_czas_zapisu: int
 
 BrygadaInfo = dict[str, StanPojazdu] # numer_brygady: StanPojazdu
 LinieInfo = dict[str, BrygadaInfo] # numer_linii: BrygadaInfo
@@ -25,7 +26,8 @@ def stworz_nowy_stan(lat: float, lon: float, czas: int) -> StanPojazdu:
         'id_kursu': -1,
         'nastpeny_przystanek': None,
         'poprzedni_przystanek': None,
-        'ostatnie_metry': []
+        'ostatnie_metry': [],
+        'ostatni_czas_zapisu': -1
     }
 
 class TrackerZTM:
@@ -109,6 +111,11 @@ class TrackerZTM:
             return 0
 
         elif pojazd["stan"] == "W_TRASIE":
+            if pojazd['ostatni_czas_zapisu'] == czas_gps:
+                logger.info(f"Brak nowych informacji o pojeździe {linia}/{brygada}, pomijam")
+                return 2
+            pojazd['ostatni_czas_zapisu'] = czas_gps
+
             przystanek_A, przystanek_B = pojazd['poprzedni_przystanek'], pojazd['nastpeny_przystanek']
             if not przystanek_A or not przystanek_B:
                 return 2

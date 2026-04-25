@@ -15,11 +15,9 @@ from src.WeatherTracker import WeatherTracker
 
 
 def main():
-
     logger = logging.getLogger(__name__)
     setup_logger(True)
-
-    logger.info("Start")
+    logger.info("===== Rozpoczęcie pomiarów =====")
 
     dotenv_path = find_dotenv()
     load_dotenv(dotenv_path)
@@ -32,7 +30,7 @@ def main():
         exit(1)
 
     kolektor_danych.stworz_baze_polozen_przystankow(API_KEY)
-    linie = ['114', '116', '138', '148', '157', '185', '189', '500', '504', '509', '517', '523']
+    linie = ['114', '116', '135', '138', '148', '157', '158', '185', '187', '189', '500', '504', '509', '517', '523']
     for linia in linie:
         kolektor_danych.stworz_trase_linii(API_KEY, linia)
         kolektor_danych.stworz_rozklad_linii(API_KEY, linia)
@@ -70,7 +68,7 @@ def main():
                     czas_gps = pojazd['czas']
                     czas_str = pojazd['czas_str']
                     oznaczenie_kursu = f'{linia}/{brygada}'
-                    wynik_przetwarzania = tracker.przetworz_pozycje(linia, brygada, lat, lon, czas_gps)
+                    wynik_przetwarzania = tracker.przetworz_pozycje(linia, brygada, lat, lon, czas_gps, czas_str)
 
                     if isinstance(wynik_przetwarzania, tuple):
                         opoznienie, metr, nazwa_trasy = wynik_przetwarzania
@@ -123,7 +121,7 @@ def main():
             for _, rekordy in BUFOR_STANOW.items():
                 if rekordy:
                     writer.writerows(rekordy)
-            logger.info("Koniec")
+            logger.info("===== Zakończenie pomiarów =====")
 
 if __name__ == "__main__":
     main()
