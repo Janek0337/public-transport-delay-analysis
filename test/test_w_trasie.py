@@ -4,7 +4,7 @@ import pytest
 from pytest import approx
 
 from src.TrackerZTM import TrackerZTM
-from kalkulator_przestrzenny import Kalkulator_Przestrzenny
+from src.kalkulator_przestrzenny import Kalkulator_Przestrzenny
 from src import utils
 
 

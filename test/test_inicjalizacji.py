@@ -4,7 +4,7 @@ import pytest
 
 from src import utils
 from src.TrackerZTM import TrackerZTM
-from kalkulator_przestrzenny import Kalkulator_Przestrzenny
+from src.kalkulator_przestrzenny import Kalkulator_Przestrzenny
 
 
 @pytest.fixture(scope="function", autouse=True)
