@@ -17,7 +17,7 @@
             },
             {
                 "id_kursu": 1,
-                "trasa": "TD-BEM",
+                "trasa": "TP-BEM",
                 "czas_startu": 32400,
                 "czas_konca": 32760,
                 "przystanki": [

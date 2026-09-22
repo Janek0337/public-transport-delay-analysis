@@ -4,6 +4,7 @@ import pytest
 
 from src import utils
 from src.TrackerZTM import TrackerZTM
+from kalkulator_przestrzenny import Kalkulator_Przestrzenny
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -19,6 +20,27 @@ def setup_dane():
     with open('test/mock_przystanki.json', 'r') as f:
         jsonik = json.load(f)
         tracker.przystanki = jsonik
+
+    tracker.kalkulator = Kalkulator_Przestrzenny()
+    nazwa_testowej_trasy = mock_rozklad[linie[0]]["1"][0]["trasa"]
+    tracker.warianty_shapes = {
+        linie[0]: {
+            nazwa_testowej_trasy: {"shape_id": "MOCK_SHAPE"}
+        }
+    }
+
+    przystanki_kursu = mock_rozklad[linie[0]]["1"][0]["przystanki"]
+    mock_punkty_trasy = []
+    
+    for p in przystanki_kursu:
+        p_id = p['przystanek_id']
+        lon = tracker.przystanki[p_id]['lon']
+        lat = tracker.przystanki[p_id]['lat']
+        mock_punkty_trasy.append((lon, lat))
+        
+    tracker.geometrie_tras = {
+        "MOCK_SHAPE": tracker.kalkulator.buduj_trase(mock_punkty_trasy)
+    }
 
     yield {'tracker': tracker, 'linie': linie}
 

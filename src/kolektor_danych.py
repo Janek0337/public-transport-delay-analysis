@@ -288,7 +288,7 @@ def zbierz_obecne_polozenie(api_key: str, linie: list[str]) -> list[dict]:
             } for x in data['result'] if x['Lines'] in linie]
 
     sciezka = DATA_DIR / 'polozenie.json'
-    with open(sciezka, 'w') as f:
+    with open(sciezka, 'w', encoding='utf-8') as f:
         json.dump(wynik, f, indent=4)
 
     return wynik

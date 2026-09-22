@@ -2,7 +2,10 @@ import json
 import logging
 from typing import List, Tuple, TypedDict
 
+import pandas as pd
 from src import utils
+
+from src.kalkulator_przestrzenny import Kalkulator_Przestrzenny
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +18,7 @@ class StanPojazdu(TypedDict):
     poprzedni_przystanek: dict | None
     ostatnie_metry: list
     ostatni_czas_zapisu: int
+    shape_id: str | None
 
 BrygadaInfo = dict[str, StanPojazdu] # numer_brygady: StanPojazdu
 LinieInfo = dict[str, BrygadaInfo] # numer_linii: BrygadaInfo
@@ -27,25 +31,39 @@ def stworz_nowy_stan(lat: float, lon: float, czas: int) -> StanPojazdu:
         'nastpeny_przystanek': None,
         'poprzedni_przystanek': None,
         'ostatnie_metry': [],
-        'ostatni_czas_zapisu': -1
+        'ostatni_czas_zapisu': -1,
+        'shape_id': None
     }
 
 class TrackerZTM:
     pojazdy: LinieInfo
     rozklady: dict[str, dict[str, List]] # linia: {nr_brygady: [lista kursów]}
     przystanki: dict[str, dict] # id_przystanku: {nazwa, lat, lon}
+    kalkulator: Kalkulator_Przestrzenny
 
     def __init__(self, linie: list):
         self.pojazdy = dict()
         self.rozklady = dict()
         self.przystanki = dict()
+        self.kalkulator = Kalkulator_Przestrzenny()
+        self.geometrie_tras = {} 
+        self.warianty_shapes = {}
+
         for linia in linie:
-            with open(utils.DATA_DIR / f'rozklad_{linia}.json') as f:
+            with open(utils.DATA_DIR / f'rozklad_{linia}.json', encoding='utf-8') as f:
                 wczytany_json = json.load(f)
                 self.rozklady[wczytany_json['linia']] = wczytany_json['brygady']
                 self.pojazdy[linia] = dict()
 
-        with open(utils.DATA_DIR / 'przystanki.json') as f:
+            plik_mapowania = utils.DATA_DIR / f'trasy_{linia}_z_shapes.json'
+            if plik_mapowania.exists():
+                with open(plik_mapowania, encoding='utf-8') as f:
+                    self.warianty_shapes[linia] = json.load(f).get('warianty_tras', {})
+            
+            surowe_geometrie = self._wczytaj_geometrie_z_plikow(linia)
+            for shape_id, punkty in surowe_geometrie.items():
+                self.geometrie_tras[shape_id] = self.kalkulator.buduj_trase(punkty)
+        with open(utils.DATA_DIR / 'przystanki.json', encoding='utf-8') as f:
                 self.przystanki = json.load(f)
 
     # o jednym położeniu jednej brygaday
@@ -95,12 +113,11 @@ class TrackerZTM:
                 return 2
             przystanek_A, przystanek_B = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, rozklad_id, lat, lon)
             
-            if (not bool(przystanek_A) or not bool(przystanek_B)):
-                pojazd["historia_gps"].pop()
-                logger.info(f"{linia}/{brygada}: Nie znaleziono pasującego do kursu położenia w rozkładzie")
-                return 2
-
             pojazd['id_kursu'] = rozklad_id
+            nazwa_kursu = self.rozklady[linia][brygada][rozklad_id]['trasa']
+            shape_info = self.warianty_shapes.get(linia, {}).get(nazwa_kursu, {})
+            pojazd['shape_id'] = shape_info.get("shape_id")
+
             pojazd['stan'] = 'W_TRASIE'
             pojazd['historia_gps'] = []
             logger.info(f"{linia}/{brygada}: Udana inicjalizacja, przypisano kurs_id: {rozklad_id}")
@@ -115,51 +132,48 @@ class TrackerZTM:
                 logger.info(f"Brak nowych informacji o pojeździe {linia}/{brygada}, pomijam")
                 return 2
             pojazd['ostatni_czas_zapisu'] = czas_gps
+            id_kursu = pojazd['id_kursu']
 
-            przystanek_A, przystanek_B = pojazd['poprzedni_przystanek'], pojazd['nastpeny_przystanek']
-            if not przystanek_A or not przystanek_B:
+            shape_id = pojazd.get('shape_id')
+            if not shape_id or shape_id not in self.geometrie_tras:
+                logger.warning(f"{linia}/{brygada}: Brak geometrii dla trasy (zjazd?). Ignoruję pomiar.")
                 return 2
-            
-            lat_a, lon_a = self.przystanki[przystanek_A['przystanek_id']]['lat'], self.przystanki[przystanek_A['przystanek_id']]['lon']
-            lat_b, lon_b = self.przystanki[przystanek_B['przystanek_id']]['lat'], self.przystanki[przystanek_B['przystanek_id']]['lon']
-            
-            if not self._sprawdz_zawartosc_w_odcinku(lat_a, lon_a, lat_b, lon_b, lat, lon):
-                przystanek_A, przystanek_B = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, pojazd['id_kursu'], lat, lon)
 
-                if (not bool(przystanek_A) or not bool(przystanek_B)):
-                    nast_kurs_id = pojazd['id_kursu'] + 1
-                    while nast_kurs_id < len(self.rozklady[linia][brygada]) and len(self.rozklady[linia][brygada][nast_kurs_id]['przystanki']) < 2:
-                        nast_kurs_id += 1
-                        
-                    if nast_kurs_id < len(self.rozklady[linia][brygada]):
-                        czas_startu_nast = self.rozklady[linia][brygada][nast_kurs_id]['czas_startu']
-                        
-                        # Znajdź koordynaty ostatniego przystanku OBECNEGO kursu
-                        ostatni_przystanek = self.rozklady[linia][brygada][pojazd['id_kursu']]['przystanki'][-1]
-                        lat_konca = self.przystanki[ostatni_przystanek['przystanek_id']]['lat']
-                        lon_konca = self.przystanki[ostatni_przystanek['przystanek_id']]['lon']
-                        
-                        if utils.oblicz_odleglosc(lat, lon, lat_konca, lon_konca) < utils.OCZEKIWANA_ODL_OD_KONCA:
-                            if czas_gps >= czas_startu_nast - 300:
-                            
-                                pA_nast, pB_nast = self._znajdz_miedzy_ktorymi_przystankami_trasy_pojazd(linia, brygada, nast_kurs_id, lat, lon)
-                                if bool(pA_nast):
-                                    pojazd['id_kursu'] = nast_kurs_id
-                                    pojazd['poprzedni_przystanek'] = pA_nast
-                                    pojazd['nastpeny_przystanek'] = pB_nast
-                                    logger.info(f"{linia}/{brygada}: Przeskoczył na kurs {nast_kurs_id} omijając strefę pętli")
-                                    return 2
-                    logger.warning(f"{linia}/{brygada} nie jest między oczekiwanymi przystankami")
-                    return 2
-            
-                pojazd['poprzedni_przystanek'] = przystanek_A
-                pojazd['nastpeny_przystanek'] = przystanek_B
+            linestr_trasy = self.geometrie_tras[shape_id]
+            wynik_rzutowania = self.kalkulator.lokalizuj_pojazd(lat, lon, linestr_trasy)
 
-            proporcja_przebytej_drogi = self._oblicz_proporcje_przebytej_trasy(przystanek_A, przystanek_B, lat, lon)
+            if wynik_rzutowania is None:
+                logger.warning(f"{linia}/{brygada} wyrzucony z pomiaru (odległość od kształtu GTFS przekracza dopuszczalny limit)")
+                return 2
 
-            metr1, metr2 = przystanek_A['metr'], przystanek_B['metr']
-            przebyty_odcinek = proporcja_przebytej_drogi*(metr2 - metr1)
-            obecny_metr_trasy = metr1 + przebyty_odcinek
+            obecny_metr_trasy, odl_od_trasy = wynik_rzutowania
+
+            przystanki_kursu = self.rozklady[linia][brygada][id_kursu]['przystanki']
+            przystanek_A, przystanek_B = None, None
+            proporcja_przebytej_drogi = 0.0
+
+            for i in range(len(przystanki_kursu) - 1):
+                p1 = przystanki_kursu[i]
+                p2 = przystanki_kursu[i+1]
+                if p1['metr'] <= obecny_metr_trasy <= p2['metr']:
+                    przystanek_A = p1
+                    przystanek_B = p2
+                    if p2['metr'] > p1['metr']:
+                        proporcja_przebytej_drogi = (obecny_metr_trasy - p1['metr']) / (p2['metr'] - p1['metr'])
+                    break
+
+            if not przystanek_A or not przystanek_B:
+                if obecny_metr_trasy < przystanki_kursu[0]['metr']:
+                    przystanek_A = przystanki_kursu[0]
+                    przystanek_B = przystanki_kursu[1]
+                    proporcja_przebytej_drogi = 0.0
+                else:
+                    przystanek_A = przystanki_kursu[-2]
+                    przystanek_B = przystanki_kursu[-1]
+                    proporcja_przebytej_drogi = 1.0
+
+            pojazd['poprzedni_przystanek'] = przystanek_A
+            pojazd['nastpeny_przystanek'] = przystanek_B
 
             # sprawdzenie trendu ruchu, czy zgodny z kierunkiem wybranej trasy
             # i czy jesli sie nie rusza to czy nie jest przypadkiem zawieszony na pętli
@@ -210,6 +224,9 @@ class TrackerZTM:
             # sprawdzamy czy nie jest już na pętli
             czas_ostatniego_przystanku = self.rozklady[linia][brygada][id_kursu]['czas_konca']
             if przystanek_B['czas'] == czas_ostatniego_przystanku:
+                lat_b = self.przystanki[przystanek_B['przystanek_id']]['lat']
+                lon_b = self.przystanki[przystanek_B['przystanek_id']]['lon']
+                
                 odleglosc_od_konca = utils.oblicz_odleglosc(lat_b, lon_b, lat, lon)
                 if odleglosc_od_konca < utils.OCZEKIWANA_ODL_OD_KONCA or proporcja_przebytej_drogi >= 0.9:
                     pojazd['stan'] = "NA_PETLI"
@@ -232,6 +249,11 @@ class TrackerZTM:
             if czas_gps >= czas_poczatku_nastpenej_trasy:
                 pojazd['stan'] = 'W_TRASIE'
                 pojazd['id_kursu'] = nowy_kurs_id
+
+                nazwa_kursu = self.rozklady[linia][brygada][nowy_kurs_id]['trasa']
+                shape_info = self.warianty_shapes.get(linia, {}).get(nazwa_kursu, {})
+                pojazd['shape_id'] = shape_info.get("shape_id")
+
                 pojazd['poprzedni_przystanek'] = self.rozklady[linia][brygada][nowy_kurs_id]['przystanki'][0]
                 pojazd['nastpeny_przystanek'] = self.rozklady[linia][brygada][nowy_kurs_id]['przystanki'][1]
                 pojazd['ostatnie_metry'] = []
@@ -253,68 +275,70 @@ class TrackerZTM:
                 kandydaci.append((idx, kurs))
 
         if len(kandydaci) == 0:
-            return -1 # brak rozkladu
+            return -1 
         
-        for _idx, kurs in kandydaci:
-            if len(kurs['przystanki']) > 0:
-                id_start = kurs['przystanki'][0]['przystanek_id']
-                id_koniec = kurs['przystanki'][-1]['przystanek_id']
-                
-                lat_s, lon_s = self.przystanki[id_start]['lat'], self.przystanki[id_start]['lon']
-                lat_k, lon_k = self.przystanki[id_koniec]['lat'], self.przystanki[id_koniec]['lon']
-                
-                # jeśli jest w promieniu 200m od startu lub końca potencjalnej trasy to nie rozważamy go
-                if (utils.oblicz_odleglosc(lat_sz, lon_sz, lat_s, lon_s) < utils.OCZEKIWANA_ODL_OD_KONCA or
-                    utils.oblicz_odleglosc(lat_sz, lon_sz, lat_k, lon_k) < utils.OCZEKIWANA_ODL_OD_KONCA):
-                    return -2
-
-        if len(kandydaci) == 1:
-            return kandydaci[0][0]
+        pojazd = self.pojazdy[linia][brygada]
+        lat1, lon1 = pojazd['historia_gps'][-2][0], pojazd['historia_gps'][-2][1] 
+        lat2, lon2 = pojazd['historia_gps'][-1][0], pojazd['historia_gps'][-1][1] 
         
-        przy_petli = None
-        for idx, _kurs in kandydaci:
-            kolejne_id_najblizszych = self._znajdz_trzy_kolejne_najblizsze_przystanki_na_trasie(linia, brygada, idx, lat_sz, lon_sz)
+        for idx, kurs in kandydaci:
+            id_start = kurs['przystanki'][0]['przystanek_id']
+            id_koniec = kurs['przystanki'][-1]['przystanek_id']
+            
+            lat_s, lon_s = self.przystanki[id_start]['lat'], self.przystanki[id_start]['lon']
+            lat_k, lon_k = self.przystanki[id_koniec]['lat'], self.przystanki[id_koniec]['lon']
+            
+            # jeśli jest w promieniu 200m od startu lub końca potencjalnej trasy to nie rozważamy go
+            if (utils.oblicz_odleglosc(lat_sz, lon_sz, lat_s, lon_s) < utils.OCZEKIWANA_ODL_OD_KONCA or
+                utils.oblicz_odleglosc(lat_sz, lon_sz, lat_k, lon_k) < utils.OCZEKIWANA_ODL_OD_KONCA):
+                return -2
 
-            if len(kolejne_id_najblizszych) == 1:
-                przy_petli = idx
+            nazwa_kursu = kurs['trasa']
+            shape_info = self.warianty_shapes.get(linia, {}).get(nazwa_kursu, {})
+            shape_id = shape_info.get("shape_id")
+
+            if not shape_id or shape_id not in self.geometrie_tras:
+                continue 
+
+            linestr_trasy = self.geometrie_tras[shape_id]
+            wynik1 = self.kalkulator.lokalizuj_pojazd(lat1, lon1, linestr_trasy)
+            wynik2 = self.kalkulator.lokalizuj_pojazd(lat2, lon2, linestr_trasy)
+
+            if wynik1 is None or wynik2 is None:
                 continue
 
-            id_celu = kolejne_id_najblizszych[1]
-            lat_celu = self.przystanki[id_celu]['lat']
-            lon_celu = self.przystanki[id_celu]['lon']
+            dystans1, _ = wynik1
+            dystans2, _ = wynik2
 
-            pojazd = self.pojazdy[linia][brygada]
-            historia = pojazd['historia_gps']
+            if dystans2 > dystans1 + 5.0:
+                return idx 
 
-            lat_A, lon_A = historia[0][0], historia[0][1]
-            lat_B, lon_B = historia[1][0], historia[1][1]
-
-            odl_A = utils.oblicz_odleglosc(lat_A, lon_A , lat_celu, lon_celu)
-            odl_B = utils.oblicz_odleglosc(lat_B, lon_B , lat_celu, lon_celu)
-
-            if odl_A > odl_B:
-                return idx
-            
-            # to nie jest kurs, który za 2 przystanki ma zajezdnie
-            if len(kolejne_id_najblizszych) == 3:
-                id_celu_2 = kolejne_id_najblizszych[2]
-                lat_celu_2 = self.przystanki[id_celu_2]['lat']
-                lon_celu_2 = self.przystanki[id_celu_2]['lon']
-
-                odl_A_cel2 = utils.oblicz_odleglosc(lat_A, lon_A, lat_celu_2, lon_celu_2)
-                odl_B_cel2 = utils.oblicz_odleglosc(lat_B, lon_B, lat_celu_2, lon_celu_2)
-
-                if odl_A_cel2 > odl_B_cel2:
-                    return idx
-        
-        # zostal ten jeden kurs co dojezdza do zajezdni
-        if przy_petli is not None:
-            return przy_petli
-        
-        logging.warning(f"{linia}/{brygada}: żadna trasa nie pasuje do tego pojazdu")
         return -1
 
+    def _wczytaj_geometrie_z_plikow(self, linia: str) -> dict:
+        try:
+            trips = pd.read_csv(utils.DATA_DIR / 'trips.txt', usecols=['route_id', 'shape_id'], dtype=str)
+            unikalne_shape_id = trips[trips['route_id'] == linia]['shape_id'].dropna().unique()
+            
+            if len(unikalne_shape_id) == 0:
+                return {}
+
+            shapes = pd.read_csv(utils.DATA_DIR / 'shapes.txt', usecols=['shape_id', 'shape_pt_lat', 'shape_pt_lon', 'shape_pt_sequence'])
+            shapes_linii = shapes[shapes['shape_id'].isin(unikalne_shape_id)].copy()
+            shapes_linii.sort_values(by=['shape_id', 'shape_pt_sequence'], inplace=True)
+            
+            geometria_tras = {}
+            for shape_id, grupa in shapes_linii.groupby('shape_id'):
+                geometria_tras[shape_id] = list(zip(grupa['shape_pt_lon'], grupa['shape_pt_lat']))
+                
+            return geometria_tras
+            
+        except FileNotFoundError as e:
+            logger.error(f"Brak plików GTFS w DATA_DIR! Kolektor zadziałał poprawnie? {e}")
+            return {}
+
     def _znajdz_trzy_kolejne_najblizsze_przystanki_na_trasie(self, linia: str, brygada: str, id_kursu: int, lat_sz: float, lon_sz: float) -> list:
+        """ DEPRECATED """
         lista_przystankow_kursu = self.rozklady[linia][brygada][id_kursu]['przystanki']
 
         najblizszy_przystanek = min(
@@ -365,7 +389,7 @@ class TrackerZTM:
         return dA + dB <= dC + utils.MAX_ODLEGLOSC_OD_PROSTEJ_TRASY_M
     
     def _oblicz_proporcje_przebytej_trasy(self, przystanek_A: dict, przystanek_B: dict, lat_sz: float, lon_sz: float) -> float:
-        
+        """ DEPRECATED """
         lat_a, lon_a = self.przystanki[przystanek_A['przystanek_id']]['lat'], self.przystanki[przystanek_A['przystanek_id']]['lon']
         lat_b, lon_b = self.przystanki[przystanek_B['przystanek_id']]['lat'], self.przystanki[przystanek_B['przystanek_id']]['lon']
         
