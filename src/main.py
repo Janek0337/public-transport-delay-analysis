@@ -33,7 +33,7 @@ def main():
     kolektor_danych.stworz_baze_polozen_przystankow(API_KEY)
     gtfs.pobierz_dane_gtfs()
 
-    linie = ['523']
+    linie = ['114', '116', '135', '138', '148', '157', '158', '185', '187', '189', '500', '504', '509', '517','523']
     for linia in linie:
         kolektor_danych.stworz_trase_linii(API_KEY, linia)
         kolektor_danych.stworz_rozklad_linii(API_KEY, linia)

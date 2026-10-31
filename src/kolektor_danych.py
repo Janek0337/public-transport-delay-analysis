@@ -26,11 +26,12 @@ session = requests.Session()
 session.mount("https://", adapter)
 
 def stworz_trase_linii(api_key: str, linia: str):
-    endpoint = "public_transport_routes"
+    endpoint = "public_transport_routes/"
     URL = BASE_URL + endpoint
 
     params = {
         'apikey': api_key,
+        'line': linia
     }
 
     try:
@@ -89,7 +90,7 @@ def stworz_trase_linii(api_key: str, linia: str):
 
 
 def stworz_rozklad_linii(api_key: str, linia: str):
-    endpoint = "dbtimetable_get"
+    endpoint = "dbtimetable_get/"
     URL = BASE_URL + endpoint
     ID_ENDPOINT_ROZKLADOW = 'e923fa0e-d96c-43f9-ae6e-60518c9f3238'
 
@@ -214,7 +215,7 @@ def _usun_ze_slownika(slownik: dict, klucz) -> dict:
 
 
 def stworz_baze_polozen_przystankow(api_key: str):
-    endpoint = "dbtimetable_get"
+    endpoint = "dbtimetable_get/"
     PRZYSTANKI_URL = BASE_URL + endpoint
     ID_ENDPOINTU_PRZYSTANKOW = 'ab75c33d-3a26-4342-b36a-6e5fef0a3ac3'
     params = {
@@ -255,7 +256,7 @@ def stworz_baze_polozen_przystankow(api_key: str):
     return 0
 
 def zbierz_obecne_polozenie(api_key: str, linie: list[str]) -> list[dict]:
-    endpoint = 'busestrams_get'
+    endpoint = 'busestrams_get/'
     BUS_LOC_RESOURCE_ID = 'f2e5503e-927d-4ad3-9500-4ab9e55deb59'
     BUS_LOC_URL = BASE_URL + endpoint
     type = 1 # 1 dla autobusu, 2 tramwaj
