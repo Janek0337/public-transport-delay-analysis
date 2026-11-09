@@ -23,11 +23,11 @@ session.mount("https://", adapter)
 logger = logging.getLogger(__name__)
 
 def pobierz_dane_gtfs():
-    url = "https://cdn.zbiorkom.live/gtfs/warsaw.zip"
+    url = "https://gtfs.ztm.waw.pl/last"
     extract_to = utils.DATA_DIR
 
     try:
-        logging.info(f'Pobieram dane GTFS...')
+        logger.info(f'Pobieram dane GTFS...')
         response = session.get(url=url)
         response.raise_for_status()
         
@@ -37,7 +37,7 @@ def pobierz_dane_gtfs():
 
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         all_files = archive.namelist()
-        to_save = ['trips.txt', 'shapes.txt', 'stop_times.txt']
+        to_save = ['trips.txt', 'shapes.txt', 'stop_times.txt', 'stops.txt']
         for file in all_files:
             if file in to_save:
                 archive.extract(file, path=extract_to)
@@ -48,7 +48,7 @@ def pobierz_dane_gtfs():
 def pobierz_geometrie_linii(linia: str) -> dict:
     try:
         trips = pd.read_csv(utils.DATA_DIR / 'trips.txt', usecols=['route_id', 'shape_id'])
-        unikalne_shape_id = trips[trips['route_id'] == linia]['shape_id'].dropna().unique()
+        unikalne_shape_id = trips[trips['route_id'].str.endswith(f"_{linia}") | (trips['route_id'] == linia)]['shape_id'].dropna().unique()
         
         if len(unikalne_shape_id) == 0:
             logger.warning(f"Brak przypisanych kształtów (shape_id) dla linii {linia}")
@@ -72,11 +72,33 @@ def pobierz_geometrie_linii(linia: str) -> dict:
 
 def mapuj_trasy_na_shapes(linia: str):
     plik_tras = utils.DATA_DIR / f"trasa_{linia}.json"
+    plik_przystankow = utils.DATA_DIR / 'przystanki.json'
         
     with open(plik_tras, 'r', encoding='utf-8') as f:
         dane_ztm = json.load(f)
         
     warianty_ztm = dane_ztm.get("warianty_tras", {})
+
+    with open(plik_przystankow, 'r', encoding='utf-8') as f:
+        baza_api = json.load(f)
+        
+    api_lookup = {}
+    for p_id, dane in baza_api.items():
+        zespol, slupek = p_id.split('_')
+        nazwa = dane['nazwa_przystanku'].lower().strip()
+        api_lookup[(nazwa, slupek)] = zespol
+
+    stops = pd.read_csv(utils.DATA_DIR / "stops.txt", usecols=['stop_id', 'stop_code', 'stop_name'], dtype=str)
+    
+    # mapowanie przystankow z api na gtfs
+    stop_id_to_zespol = {}
+    for _, row in stops.iterrows():
+        nazwa_gtfs = str(row['stop_name']).lower().strip()
+        slupek_gtfs = str(row['stop_code']).zfill(2).strip()
+        
+        zespol = api_lookup.get((nazwa_gtfs, slupek_gtfs))
+        if zespol:
+            stop_id_to_zespol[row['stop_id']] = zespol
 
     trips = pd.read_csv(utils.DATA_DIR / "trips.txt", usecols=['route_id', 'trip_id', 'shape_id'], dtype=str)
     stop_times = pd.read_csv(
@@ -85,62 +107,57 @@ def mapuj_trasy_na_shapes(linia: str):
         dtype={'trip_id': str, 'stop_id': str}
     )
 
-    trips_linii = trips[trips['route_id'] == linia]
+    trips_linii = trips[trips['route_id'].str.endswith(f"_{linia}") | (trips['route_id'] == linia)]
     trip_ids = trips_linii['trip_id'].unique()
     
     stop_linii = stop_times[stop_times['trip_id'].isin(trip_ids)].copy()
-    
-    # ujednolicenie z 2130_01 do 213001 bo tak w gtfs
-    stop_linii['stop_id_clean'] = stop_linii['stop_id'].str.replace('_', '')
     stop_linii = stop_linii.sort_values(by=['trip_id', 'stop_sequence'])
 
-    # usuniecie brzegowego "przystanku" R bo to zajezdnia
+    gtfs_sequences = {}
+    for trip_id, grupa in stop_linii.groupby('trip_id'):
+        sekwencja_gtfs_zespoly = []
+        for s_id in grupa['stop_id']:
+            zespol = stop_id_to_zespol.get(s_id)
+            if zespol:
+                sekwencja_gtfs_zespoly.append(zespol)
+                
+        sekwencja_gtfs_zespoly = [s for s in sekwencja_gtfs_zespoly if 'R' not in s] 
+        
+        if len(sekwencja_gtfs_zespoly) >= 2:
+            shape_id_wiersz = trips_linii[trips_linii['trip_id'] == trip_id]
+            shape_id = shape_id_wiersz['shape_id'].values[0]
+            gtfs_sequences[trip_id] = (shape_id, sekwencja_gtfs_zespoly)
+
     udane_mapowanie = True
     for nazwa_wariantu, dane_wariantu in warianty_ztm.items():
-        posortowane_przystanki_ztm = sorted(
-            dane_wariantu.items(), 
-            key=lambda x: int(x[1]['nr_kolejnosci'])
-        )
+        posortowane_przystanki_ztm = sorted(dane_wariantu.items(), key=lambda x: int(x[1]['nr_kolejnosci']))
         
         sekwencja_ztm_zespoly = [przystanek_id.split('_')[0] for przystanek_id, _ in posortowane_przystanki_ztm]
-        
-        while sekwencja_ztm_zespoly and 'R' in sekwencja_ztm_zespoly[0]:
-            sekwencja_ztm_zespoly.pop(0)
-        while sekwencja_ztm_zespoly and 'R' in sekwencja_ztm_zespoly[-1]:
-            sekwencja_ztm_zespoly.pop(-1)
+        sekwencja_ztm_zespoly = [s for s in sekwencja_ztm_zespoly if 'R' not in s]
             
         if len(sekwencja_ztm_zespoly) < 2:
             continue
             
-        pierwszy_ztm = sekwencja_ztm_zespoly[0]
-        ostatni_ztm = sekwencja_ztm_zespoly[-1]
-        
         znaleziono_shape = None
+        najlepszy_wynik = -1
 
-        for trip_id, grupa in stop_linii.groupby('trip_id'):
-            sekwencja_gtfs_zespoly = [stop[:-2] for stop in grupa['stop_id_clean']]
+        for trip_id, (shape_id, seq_gtfs) in gtfs_sequences.items():
+            wspolne_zespoly = set(sekwencja_ztm_zespoly).intersection(set(seq_gtfs))
             
-            while sekwencja_gtfs_zespoly and 'R' in sekwencja_gtfs_zespoly[0]:
-                sekwencja_gtfs_zespoly.pop(0)
-            while sekwencja_gtfs_zespoly and 'R' in sekwencja_gtfs_zespoly[-1]:
-                sekwencja_gtfs_zespoly.pop(-1)
+            if len(wspolne_zespoly) >= 2:
+                roznica_dlugosci = abs(len(sekwencja_ztm_zespoly) - len(seq_gtfs))
+                wynik = len(wspolne_zespoly) - (roznica_dlugosci * 0.1)
                 
-            if len(sekwencja_gtfs_zespoly) < 2: 
-                continue
-            
-            pierwszy_gtfs = sekwencja_gtfs_zespoly[0]
-            ostatni_gtfs = sekwencja_gtfs_zespoly[-1]
-            
-            if pierwszy_ztm == pierwszy_gtfs and ostatni_ztm == ostatni_gtfs:
-                shape_id_wiersz = trips_linii[trips_linii['trip_id'] == trip_id]
-                znaleziono_shape = shape_id_wiersz['shape_id'].values[0]
-                break
+                if wynik > najlepszy_wynik:
+                    najlepszy_wynik = wynik
+                    znaleziono_shape = shape_id
 
         if znaleziono_shape:
             dane_ztm["warianty_tras"][nazwa_wariantu]["shape_id"] = znaleziono_shape
+            logger.info(f"Dopasowano wariant {nazwa_wariantu} -> shape_id: {znaleziono_shape}")
         else:
             udane_mapowanie = False
-            logging.warning(f"Brak dopasowania kształtu trasy dla {linia}/{nazwa_wariantu}")
+            logger.warning(f"Brak dopasowania kształtu trasy dla {linia}/{nazwa_wariantu}")
 
     plik_wyjsciowy = utils.DATA_DIR / f"trasy_{linia}_z_shapes.json"
     with open(plik_wyjsciowy, 'w', encoding='utf-8') as f:
@@ -149,4 +166,4 @@ def mapuj_trasy_na_shapes(linia: str):
     if udane_mapowanie:
         logger.info(f'Udane mapowanie tras na ich kształty dla linii {linia}')    
     else:
-        logger.warning(f'Zakończono mapowanie tras dla linii {linia}')
+        logger.warning(f'Zakończono mapowanie tras dla linii {linia} (z błędami)')

@@ -288,7 +288,6 @@ class TrackerZTM:
             lat_s, lon_s = self.przystanki[id_start]['lat'], self.przystanki[id_start]['lon']
             lat_k, lon_k = self.przystanki[id_koniec]['lat'], self.przystanki[id_koniec]['lon']
             
-            # jeśli jest w promieniu 200m od startu lub końca potencjalnej trasy to nie rozważamy go
             if (utils.oblicz_odleglosc(lat_sz, lon_sz, lat_s, lon_s) < utils.OCZEKIWANA_ODL_OD_KONCA or
                 utils.oblicz_odleglosc(lat_sz, lon_sz, lat_k, lon_k) < utils.OCZEKIWANA_ODL_OD_KONCA):
                 return -2
@@ -318,12 +317,13 @@ class TrackerZTM:
     def _wczytaj_geometrie_z_plikow(self, linia: str) -> dict:
         try:
             trips = pd.read_csv(utils.DATA_DIR / 'trips.txt', usecols=['route_id', 'shape_id'], dtype=str)
-            unikalne_shape_id = trips[trips['route_id'] == linia]['shape_id'].dropna().unique()
+            mask = trips['route_id'].str.endswith(f"_{linia}") | (trips['route_id'] == linia)
+            unikalne_shape_id = trips[mask]['shape_id'].dropna().unique()
             
             if len(unikalne_shape_id) == 0:
                 return {}
 
-            shapes = pd.read_csv(utils.DATA_DIR / 'shapes.txt', usecols=['shape_id', 'shape_pt_lat', 'shape_pt_lon', 'shape_pt_sequence'])
+            shapes = pd.read_csv(utils.DATA_DIR / 'shapes.txt', usecols=['shape_id', 'shape_pt_lat', 'shape_pt_lon', 'shape_pt_sequence'], dtype={'shape_id': str})
             shapes_linii = shapes[shapes['shape_id'].isin(unikalne_shape_id)].copy()
             shapes_linii.sort_values(by=['shape_id', 'shape_pt_sequence'], inplace=True)
             
