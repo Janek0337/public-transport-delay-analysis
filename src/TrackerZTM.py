@@ -66,6 +66,34 @@ class TrackerZTM:
         with open(utils.DATA_DIR / 'przystanki.json', encoding='utf-8') as f:
                 self.przystanki = json.load(f)
 
+        # zrzutowanie przystanków na krzywą trasy
+        for linia, brygady in self.rozklady.items():
+            for brygada, kursy in brygady.items():
+                for kurs in kursy:
+                    shape_info = self.warianty_shapes.get(linia, {}).get(kurs['trasa'], {})
+                    shape_id = shape_info.get("shape_id")
+
+                    if shape_id and shape_id in self.geometrie_tras:
+                        linestr_trasy = self.geometrie_tras[shape_id]
+                        
+                        poprzedni_metr = -1.0 # Zabezpieczenie przed pętlami
+                        
+                        for przystanek in kurs['przystanki']:
+                            p_id = przystanek['przystanek_id']
+                            if p_id in self.przystanki:
+                                lat_p = self.przystanki[p_id]['lat']
+                                lon_p = self.przystanki[p_id]['lon']
+                                
+                                wynik_rzutowania = self.kalkulator.lokalizuj_pojazd(lat_p, lon_p, linestr_trasy)
+                                if wynik_rzutowania:
+                                    zrzutowany_metr = wynik_rzutowania[0]
+                                    
+                                    if zrzutowany_metr < poprzedni_metr:
+                                        zrzutowany_metr = poprzedni_metr + 1.0
+                                        
+                                    przystanek['metr'] = zrzutowany_metr
+                                    poprzedni_metr = zrzutowany_metr
+
     # o jednym położeniu jednej brygaday
     def przetworz_pozycje(self, linia: str, brygada: str, lat: float, lon: float, czas_gps: int) -> int | tuple:
         """
